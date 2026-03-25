@@ -19,4 +19,13 @@ The following are a list of functional requirements specified by the product own
 8. Customers should be able to see a purchase history covering the last past 6 months.
 
 
+## List of Microservices
+- catalog service: provides endpoints for users to get information about products
+- order service: processes orders.
+- payment service: processes payments.
+- notification service
+- shipping service
+- login service: covers login and authorization
+- loyalty service: manages user loyalty points
+- inventory service
  
