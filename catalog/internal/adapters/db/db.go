@@ -4,7 +4,7 @@ import (
   "context"
   "fmt"
 
-  "github.com/mantrobuslawal/bfmicroservices/catalog/internal/application/core/domain"
+  "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
 )
 
 // Usual size of searchValue struct
