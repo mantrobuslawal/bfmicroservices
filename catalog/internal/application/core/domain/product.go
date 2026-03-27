@@ -15,6 +15,30 @@ type Product struct {
      Subcategory  string /*subCategory*/	        `json: "sub_category"` 
 }
 
+// Type used to query catalog database
+type SearchType struct {
+     opt         SearchOption
+     searchValue []string
+}
+
+const (
+    SKU SearchOption = iota
+    ProductName
+    Brand
+    Category 
+)
+
+var optionName = map[SearchOption]string{
+    SKU: "sku",
+    ProductName: "name",
+    Brand: "brand",
+    Category: "category",
+}
+
+func (opt SearchOption) String() string {
+	return optionName[opt]
+}
+
 /*
 type productName string
 type manufacturer string
