@@ -1,3 +1,3 @@
-module github.com/mantrobuslawal/bfservices/catalog
+module github.com/mantrobuslawal/bfmicroservices/catalog
 
 go 1.25.0
