@@ -2,7 +2,7 @@ package ports
 
 import (
    "context"
-   "github.com/mantrobuslawal/bfmircroservices/catalog.git/internal/application/core/domain"
+   "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
 )
 
 type DBPort interface {

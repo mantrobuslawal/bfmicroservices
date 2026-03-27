@@ -2,7 +2,7 @@ package api
 
 import (
    "context"
-   "github.com/mantrobuslawal/bfmircoservices/catalog.git/internal/application/core/domain"
+   "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
    "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/ports" 
 )
 
