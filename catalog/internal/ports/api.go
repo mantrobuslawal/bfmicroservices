@@ -2,7 +2,7 @@ package ports
 
 import (
 	"context"
-	"github.com/mantrobuslawal/bfmicroservices/catalog/internal/application/core/domain"
+	"github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
 )
 
 // Interface for catalog api
