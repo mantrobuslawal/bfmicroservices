@@ -4,19 +4,18 @@ import (
    "context"
    "testing"
 
-   "github.com/mantrobuslawal/bfmicroservices/catalog.git/domain"
-   "github.com/mantrobuslawal/bfmicroservices/catalog.git/ports"
+   "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
 
    "github.com/stretchr/testify/assert"  
 )
 
+type testRepo struct { store []domain.Product }
+
+func (tr testRepo) GetProducts(context.Context, domain.SearchType) ([]domain.Product, error) {
+	return tr.store, nil
+}
+
 func TestGetProducts(t *testing.T) {
-	type testRepo struct {store []domain.Product}	
-
-	func (tr testRepo) GetProduct(ctx context.Context, opt domain.SearchType) []domain.Product {
-		return tr.store
-	}
-
         var mock testRepo
         mock.store = []domain.Product{{
                          SKU: "abcfghd12345",
@@ -35,8 +34,9 @@ func TestGetProducts(t *testing.T) {
 		app := NewApplication(mock)
         	assert := assert.New(t)
 
-		got, err := app.GetProducts(context.Background(), _ domain.SearchType)
+		opt := domain.SearchType{}
+		got, err := app.GetProducts(context.Background(), opt)
 		assert.ErrorIs(err, nil)
-        	assert.Equal(items, mock.store)
-	}
+        	assert.Equal(got, mock.store)
+	})
 }
