@@ -1,29 +1,32 @@
 package domain
 
-// TODO imports
 
 // Avoiding modelling attributes in initial stage
 // TODO update attribute types to domain types 
+
+// Item being sold in store
 type Product struct {
-     SKU 	  string /*sku*/		        `json: "sku"`
+     SKU 	  string /*sku*/		   `json: "sku"`
      Name 	  string /*productName*/           `json: "name"`
-     Brand 	  string /*manufacturer*/	        `json: "brand"`
-     UnitPrice 	  float64 /*price*/		        `json: "unit_price"`
-     Sizes 	  []string /*size*/		        `json: "sizes"`
+     Brand 	  string /*manufacturer*/	   `json: "brand"`
+     UnitPrice 	  float64 /*price*/		   `json: "unit_price"`
+     Sizes 	  []string /*size*/		   `json: "sizes"`
      Description  string /*productDescription*/    `json: "description"`
      Category 	  string /*category*/              `json: "category"`
-     Subcategory  string /*subCategory*/	        `json: "sub_category"` 
+     Subcategory  string /*subCategory*/	   `json: "sub_category"` 
 }
 
 
 // Type used to query catalog database
+// on different fields i.e. brand, sku, product name etc.
 type SearchType struct {
-     opt         SearchOption
-     searchValue []string
+     Opt         SearchOption
+     SearchValue []string
 }
 
 type SearchOption int
 
+// Create enum representing search categories
 const (
     SKU SearchOption = iota
     ProductName
@@ -43,14 +46,6 @@ func (opt SearchOption) String() string {
 }
 
 /*
-type productName string
-type manufacturer string
-type price float64 // TODO - create custom type
-type size []string // TODO - create custom type
-type productDescription string
-type sku string
-type category string // TODO - CREATE ENUM
-type subCategory string // TODO - CREATE ENUM
 type rating float32
 type review string // TODO - CREATE STRUCT{}
 */
