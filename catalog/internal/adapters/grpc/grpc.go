@@ -3,7 +3,7 @@ package grpc
 import (
      "context"
      // log "github.com/sirupsen/logrus"
-     "google.golang.org/proto"
+     // "google.golang.org/proto" - WHAT IS THIS?
 
      "github.com/mantrobuslawal/bfproto/golang/catalog"
      "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
