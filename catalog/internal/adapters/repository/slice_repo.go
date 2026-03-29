@@ -5,7 +5,6 @@ import (
   "fmt"
 
   "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
-  "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/ports"
 )
 
 // Usual size of searchValue struct
@@ -69,7 +68,7 @@ func (a Adapter) GetProducts(ctx context.Context, query domain.SearchType) ([]do
 	return results, nil
 }
 
-func NewAdapater(repo ports.RepositoryPort) (*Adapter, error) {
+func NewAdapater(repo []domain.Product) (*Adapter, error) {
 	return &Adapter{repo: repo}, nil
 }
 
