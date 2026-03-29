@@ -54,10 +54,13 @@ func (a Adapter) GetProducts(ctx context.Context, query domain.SearchType) ([]do
 		case "category":
                 for _, product := range a.repo {
 			if product.Category == searchValue1 {
-		// The second case represents when there is no subcategory to filter.
-		// It is always true, tested in toplevel if product.Category == searchValue
-				if (product.Subcategory != "" && product.Subcategory == searchValue2) || true  { 
-				        results = append(results, product)
+				switch searchValue2 {
+					case "": 	// No subcategory filter
+					results = append(results, product)
+					default:
+					if product.Subcategory == searchValue2 {
+						results = append(results, product)
+					}
 				}
 			}
 		}
