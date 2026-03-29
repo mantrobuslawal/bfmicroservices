@@ -70,7 +70,7 @@ func (a Adapter) GetProducts(ctx context.Context, query domain.SearchType) ([]do
 	return results, nil
 }
 
-func NewAdapater(repo []domain.Product) (Adapter, error) {
+func NewAdapter(repo []domain.Product) (Adapter, error) {
 	return Adapter{repo: repo}, nil
 }
 
