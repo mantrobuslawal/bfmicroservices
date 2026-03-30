@@ -17,7 +17,7 @@ func TestGetProducts(t *testing.T) {
 	}{
 		"sku in repo": {
 			query: domain.SearchType{domain.SKU, []string{"abdcdegh12345"}},
-			products: sliceCatalog[0:1],
+			products: SliceCatalog[0:1],
 			expectedErr: nil,
                        
 		},
@@ -38,7 +38,7 @@ func TestGetProducts(t *testing.T) {
                
 		"name in repo": {
 			query: domain.SearchType{domain.ProductName, []string{"gopher desk"}},
-			products: sliceCatalog[0:1],
+			products: SliceCatalog[0:1],
 			expectedErr: nil,
                        
 		},
@@ -59,7 +59,7 @@ func TestGetProducts(t *testing.T) {
 		
 		"brand in repo": {
 			query: domain.SearchType{domain.Brand, []string{"rob pike tapestry"}},
-			products: sliceCatalog[1:2],
+			products: SliceCatalog[1:2],
 			expectedErr: nil,
                        
 		},
@@ -80,14 +80,14 @@ func TestGetProducts(t *testing.T) {
 		  
 		"category in repo": {
 			query: domain.SearchType{domain.Category, []string{"office furniture"}},
-			products: []domain.Product{sliceCatalog[0], sliceCatalog[2]},
+			products: []domain.Product{SliceCatalog[0], SliceCatalog[2]},
 			expectedErr: nil,
                        
 		},
 		
 		"category and subcategory in repo": {
 			query: domain.SearchType{domain.Category, []string{"home decor", "wall decor"}},
-			products: sliceCatalog[1:2],
+			products: SliceCatalog[1:2],
 			expectedErr: nil,
                        
 		},
@@ -121,7 +121,7 @@ func TestGetProducts(t *testing.T) {
 		},  
 	}
 
-	repo, _ := NewAdapter(SliceCatalog)  // sliceCatalog located in testdata_slice.go
+	repo, _ := NewAdapter(SliceCatalog)  // SliceCatalog located in testdata_slice.go
 
 	for name, tc := range tests {
 		name, tc := name, tc

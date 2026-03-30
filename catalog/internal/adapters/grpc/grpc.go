@@ -2,8 +2,6 @@ package grpc
 
 import (
      "context"
-     // log "github.com/sirupsen/logrus"
-     // "google.golang.org/proto" - WHAT IS THIS?
 
      "github.com/mantrobuslawal/bfproto/golang/catalog"
      "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
@@ -36,7 +34,7 @@ func (a Adapter) Get(ctx context.Context, req *catalog.GetProductRequest) (*cata
   
 	}
 	st := domain.SearchType{opt, searchValue}
-	result, err := a.api.Get(ctx, st)
+	result, err := a.api.GetProducts(ctx, st)
 	if err != nil {
 	   return nil, err
 	}
