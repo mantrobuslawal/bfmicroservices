@@ -15,6 +15,7 @@ import (
 type Adapter struct {
 	api ports.APIPort
         port int
+	server *grpc.Server
         catalog.UnimplementedCatalogServer
 }
 

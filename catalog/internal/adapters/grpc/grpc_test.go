@@ -27,15 +27,9 @@ var listener *bufconn.Listener
 
 func TestServer_GetProducts(t *testing.T) {
 	initGRPCServerBuffCon(t)
+	cc, _ := NewClientAdapter()
+	
 	ctx := context.Background()
-	
-	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(getBufDialer(listener)), grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	
-	cc := catalog.NewCatalogClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
 	defer cancel()
 	
@@ -44,8 +38,26 @@ func TestServer_GetProducts(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Could not retrieve product: %v", err)
 	}	
-	log.Printf(res.Value)
+	log.Printf("%v", res)
 }
+
+type clientAdapter struct {
+	catalog catalog.CatalogClient
+}
+
+func NewClientAdapter() (*clientAdapter, error) {
+	conn, err := grpc.DialContext(context.Background(), "bufnet", grpc.WithContextDialer(getBufDialer(listener)), grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+	client := catalog.NewCatalogClient(conn)
+	return &clientAdapter{catalog: client}, nil
+}
+
+func (ca *clientAdapter) GetProducts(ctx context.Context, in *catalog.GetProductRequest) (*catalog.GetProductResponse, error) {
+	res, err := ca.catalog.GetProducts(ctx, in)
+	return res, err
+} 
 
 func getBufDialer(listener *bufconn.Listener) func(context.Context, string) (net.Conn, error) {
 	return func(ctx context.Context, url string) (net.Conn, error) {
@@ -66,11 +78,11 @@ func initGRPCServerBuffCon(t *testing.T){
 	s.server = grpcServer
 	catalog.RegisterCatalogServer(grpcServer, s)
         // Register reflection service on gRPC server
-	reflection.Register(s)
+	reflection.Register(grpcServer)
         
 	go func() {
 		log.Printf("starting catalog service on port %d...", s.port)
-		if err := s.Serve(listener); err != nil {
+		if err := s.server.Serve(listener); err != nil {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()

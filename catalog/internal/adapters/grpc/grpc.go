@@ -48,9 +48,6 @@ func (a Adapter) GetProducts(ctx context.Context, req *catalog.GetProductRequest
 	
 	// Get field name
 	searchField := fd.TextName()
-
-	// Get field value
-	searchText := msg.Get(fd)  // Returns Value type
 	
 	var opt domain.SearchOption
 	var searchValue []string
@@ -59,24 +56,23 @@ func (a Adapter) GetProducts(ctx context.Context, req *catalog.GetProductRequest
 	switch searchField {
 	case "sku":
               opt = domain.SKU
-	      val, ok := searchText.(string)
-	      if ok {  searchValue = []string{val} }
+	      searchValue = []string{req.GetSku()}
         
 	case "name":
               opt = domain.ProductName
-	      val, ok := searchText.(string)
-	      if ok {  searchValue = []string{val} }
+	      searchValue = []string{req.GetProductName()}
   
 	case "brand":
               opt = domain.Brand
-	      val, ok := searchText.(string)
-	      if ok {  searchValue = []string{val} }
+	      searchValue = []string{req.GetBrand()}
   
 	case "category":
               opt = domain.Category
-	      cat, ok := req.SearchType.(Category)
-	      searchValue = []string{cat.GetCategory(), cat.GetSubCategory()}
-	}
+	      _, ok := req.SearchType.(*catalog.GetProductRequest_CatSearch)
+	      if ok { cat := req.GetCatSearch() 
+		      searchValue = []string{cat.GetCategory(), cat.GetSubCategory()}
+	      } 	
+        }
  
 	st := domain.SearchType{opt, searchValue}
 	result, err := a.api.GetProducts(ctx, st)
@@ -90,6 +86,7 @@ func (a Adapter) GetProducts(ctx context.Context, req *catalog.GetProductRequest
 
 	var products []*catalog.Product
 	for _, product := range result {
+		subcat := product.Subcategory
 	    products = append(products, &catalog.Product{
 		Sku:          product.SKU,
                 Name:         product.Name,
@@ -98,7 +95,7 @@ func (a Adapter) GetProducts(ctx context.Context, req *catalog.GetProductRequest
                 Sizes:        product.Sizes,
                 Description:  product.Description,
                 Category:     product.Category,
-                SubCategory: *product.Subcategory, 
+                SubCategory:  &subcat, 
 	    })
 	}
 	return &catalog.GetProductResponse{Products: products}, nil 
