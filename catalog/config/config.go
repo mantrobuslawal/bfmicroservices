@@ -7,7 +7,7 @@ import (
 )
 
 func GetEnv() string {
-	return getEnvironment("ENV")
+	return getEnvironmentValue("ENV")
 }
 
 func GetDataSourceURL() string {
