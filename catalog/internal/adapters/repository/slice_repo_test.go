@@ -10,42 +10,6 @@ import (
 )
 
 func TestGetProducts(t *testing.T) {
-	sliceCatalog := []domain.Product{
-		{
-			SKU: "abdcdegh12345",
-		        Name: "gopher desk",
-                        Brand: "the golang furniture company",
-                        UnitPrice: 59.99,
-			Sizes: []string{"standard"},
-                        Description: "gopher desk 3000",
- 		        Category: "office furniture",
-			Subcategory: "desks",
-		},
-
-		{
-			SKU: "abdcdzzz78945",
-		        Name: "a gopher's day out hanging",
-                        Brand: "rob pike tapestry",
-                        UnitPrice: 96.99,
-			Sizes: []string{"standard"},
-                        Description: "a gopher's day out tapestry wall hanging",
- 		        Category: "home decor",
-			Subcategory: "wall decor",
-		},
-		
-		{
-			SKU: "abdcdooo33654",
-		        Name: "rust desk",
-                        Brand: "mr. karbs office furnishings",
-                        UnitPrice: 79.99,
-			Sizes: []string{"standard"},
-                        Description: "crustacean home office desk",
- 		        Category: "office furniture",
-			Subcategory: "desks",
-		},
-
-	}
-
 	tests := map[string]struct{
 	   query       domain.SearchType
            products    []domain.Product
@@ -157,7 +121,7 @@ func TestGetProducts(t *testing.T) {
 		},  
 	}
 
-	repo, _ := NewAdapter(sliceCatalog)
+	repo, _ := NewAdapter(sliceCatalog)  // sliceCatalog located in testdata_slice.go
 
 	for name, tc := range tests {
 		name, tc := name, tc
