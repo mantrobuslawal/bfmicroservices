@@ -5,14 +5,15 @@ import (
    "log"
    "net"
    "testing"
+   "time"
 
    "google.golang.org/grpc"
    "google.golang.org/grpc/reflection"
    "google.golang.org/grpc/test/bufconn"
   
     "github.com/mantrobuslawal/bfproto/golang/catalog"
-    "github.com/mantrobuslawal/bfmircoservices/catalog.git/internal/application/core/api"
-    "github.com/mantrobuslawal/bfmircoservices/catalog.git/internal/adapters/repository"
+    "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/api"
+    "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/adapters/repository"
     
 )  
 
@@ -25,19 +26,21 @@ const (
 var listener *bufconn.Listener
 
 func TestServer_GetProducts(t *testing.T) {
+	initGRPCServerBuffCon(t)
 	ctx := context.Background()
-	initGRPCServerBuffConn(t)
-	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(getBufDialer(listner)), grpc.WithInsecure())
+	
+	conn, err := grpc.DialContext(ctx, "bufnet", grpc.WithContextDialer(getBufDialer(listener)), grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
-	cc := catalog.NewCatalogClient(conn)
 	
-	skuQuery := catalog.*GetProductRequest_Sku("abdcdegh12345")
+	cc := catalog.NewCatalogClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
 	defer cancel()
-	res, err := cc.GetProducts(ctx, &catalog.GetProductRequest{SearchType: skuQuery})
+	
+	// search by SKU
+	res, err := cc.GetProducts(ctx, &catalog.GetProductRequest{SearchType: &catalog.GetProductRequest_Sku{Sku: "abdcdegh12345"}})
 	if err != nil {
 		log.Fatalf("Could not retrieve product: %v", err)
 	}	
@@ -46,7 +49,7 @@ func TestServer_GetProducts(t *testing.T) {
 
 func getBufDialer(listener *bufconn.Listener) func(context.Context, string) (net.Conn, error) {
 	return func(ctx context.Context, url string) (net.Conn, error) {
-		return listner.Dial()
+		return listener.Dial()
 	}
 }
 
@@ -77,7 +80,7 @@ func initGRPCServerBuffCon(t *testing.T){
 func initApp(t *testing.T) *api.Application {
 	t.Helper()
 
-	repo := repository.NewAdapter(repository.SliceCatalog)
+	repo, _ := repository.NewAdapter(repository.SliceCatalog)
 	app := api.NewApplication(repo)
 
 	return app	
