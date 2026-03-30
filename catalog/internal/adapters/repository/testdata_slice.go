@@ -3,7 +3,7 @@ package repository
 import "github.com/mantrobuslawal/bfmicroservices/catalog.git/internal/application/core/domain"
 
 // Data used to test slice repository implementation
-var sliceCatalog = []domain.Product{
+var SliceCatalog = []domain.Product{
 		{
 			SKU: "abdcdegh12345",
 		        Name: "gopher desk",

@@ -121,7 +121,7 @@ func TestGetProducts(t *testing.T) {
 		},  
 	}
 
-	repo, _ := NewAdapter(sliceCatalog)  // sliceCatalog located in testdata_slice.go
+	repo, _ := NewAdapter(SliceCatalog)  // sliceCatalog located in testdata_slice.go
 
 	for name, tc := range tests {
 		name, tc := name, tc
