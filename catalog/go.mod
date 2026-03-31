@@ -3,7 +3,7 @@ module github.com/mantrobuslawal/bfmicroservices/catalog.git
 go 1.25.0
 
 require (
-	github.com/mantrobuslawal/bfproto/golang/catalog v0.0.0-20260327061430-0fa71edbb527
+	github.com/mantrobuslawal/bfproto/golang/catalog v0.0.0-20260329072307-f8b2fc5eae0e
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.79.3
