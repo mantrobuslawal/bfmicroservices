@@ -746,3 +746,236 @@ Important resilience scenarios include:
 - Kafka consumer lag
 - Service restart during checkout
 - Network latency between services
+
+---
+
+## Observability
+
+Each service should emit:
+- Structured logs
+- Metrics
+- Distributed traces
+- Health check status
+- Readiness status
+- Error counts
+- Request latency
+- Kafka consumer lag where applicable
+
+The observability goal is to make it possible to answer:
+```text
+Is the service healthy?
+Is it fast enough?
+Is it producing errors?
+Where is latency being introduced?
+Are Kafka consumers keeping up?
+Are downstream dependencies causing failures?
+Can we diagnose a failed checkout flow end to end?
+```
+
+---
+
+## Security Principles
+
+bfstore should follow secure-by-default application practices:
+- Authentication at the edge
+- Authorisation for protected operations
+- Service-to-service identity
+- Least privilege database access
+- No secrets in source control
+- Secure configuration handling
+- Dependency scanning
+- Container scanning
+- SBOM generation
+- Signed container images
+- Structured audit events for sensitive operations
+- PII-aware logging and data handling
+
+Application-level security lives in this repo.
+
+Platform-wide controls live in ```text bfstore-security-governance```, including:
+
+- Zero trust principles
+- Identity and access model
+- Secrets strategy
+- Policy-as-code
+- Threat models
+- Kubernetes security standards
+- Container security standards
+- Software supply-chain standards
+- SLSA target state
+- Production readiness standard
+
+---
+
+### Deployment
+
+This repo includes application deployment configuration for local and Kubernetes-based environments.
+
+```text
+deploy/
+├── docker/
+├── kubernetes/
+├── helm/
+└── kustomize/
+```
+
+The application should be deployable locally for development and to Kubernetes environments such as:
+
+```text
+dev
+test
+staging
+prod
+```
+
+The production cloud infrastructure itself is managed outside this repo in ```text bfstore-platform-infra```.
+
+The desired Kubernetes state for applications, platform add-ons, and policies is managed in ```text bfstore-platform-gitops```.
+
+---
+
+## Production Readiness
+
+bfstore provides production readiness evidence for each service.
+
+Each service should eventually have:
+
+- Service owner
+- README
+- API documentation
+- Event documentation
+- Runbook
+- Health checks
+- Readiness checks
+- Metrics
+- Logs
+- Traces
+- Dashboard
+- Alerts
+- SLOs
+- Threat model
+- SBOM
+- Signed image
+- Resource requests and limits
+- Deployment strategy
+- Rollback strategy
+- Database migration strategy
+- Performance test evidence
+- Resilience test evidence
+
+Production readiness scorecards are managed in the wider developer platform repository:
+
+```text  bfstore-developer-platform/scorecards/```
+
+---
+
+## Engineering Workflow
+
+A typical change will update all affected parts of the system.
+
+For example, changing order creation behaviour may require updates to:
+
+```text
+services/order-service/
+proto/acme/order/v1/order_service.proto
+proto/acme/order/v1/order_events.proto
+docs/requirements/service-requirements/order-service.md
+docs/events/event-catalog.md
+docs/testing/contract-testing.md
+docs/architecture/resilience-patterns.md
+adr/
+tests/contract/
+tests/integration/
+tests/resilience/
+```
+This keeps requirements, contracts, implementation, tests, and operations aligned.
+
+---
+
+## Design Philosophy
+
+bfstore follows a documentation-first and contract-first approach.
+
+The preferred design order is:
+
+```text
+Requirements
+    -> Domain model
+    -> Service boundaries
+    -> API and event contracts
+    -> Data ownership
+    -> Database design
+    -> Implementation
+    -> Tests
+    -> Deployment
+    -> Operations
+```
+
+This prevents the system from being shaped too early by database tables or framework choices.
+
+The API is the contract.
+
+The database is an implementation detail owned by the service.
+
+---
+
+### Senior Platform Engineering Scope
+
+Although bfstore is the application repo, it is designed to support a wider senior-platform portfolio.
+
+The complete ACME estate demonstrates:
+
+- Cloud-native application design
+- Kubernetes platform design
+- GitOps deployment
+- Infrastructure as code
+- Reusable Terraform/OpenTofu modules
+- Zero-trust networking
+- Identity and access governance
+- Secrets management
+- Policy-as-code
+- Secure CI/CD
+- Software supply-chain security
+- SBOMs, signing, and provenance
+- Observability and SLOs
+- Incident response
+- Disaster recovery
+- Backup and restore
+- FinOps and cost controls
+- Developer platform and golden paths
+- Production readiness scorecards
+
+This makes the project suitable for demonstrating skills relevant to:
+
+- Senior Platform Engineer
+- DevSecOps Engineer
+- Kubernetes Platform Engineer
+- Cloud Platform Engineer
+- Site Reliability Engineer
+
+---
+
+## Status
+
+This project is under active design and development.
+
+Current focus areas:
+
+- Requirements analysis
+- Domain modelling
+- Service boundary definition
+- Protobuf contract design
+- MySQL data ownership model
+- Local development environment
+- Core service implementation
+- Testing strategy
+- Observability baseline
+- Resilience and production readiness planning
+
+---
+
+## Licence
+
+This project is intended for learning, demonstration, and portfolio purposes.
+
+Licence to be decided.
