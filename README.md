@@ -363,6 +363,49 @@ Services communicate through:
 
 The API is the contract. The database is a private implementation detail owned by the service.
 
+## Communication Model
+
+bfstore uses two communication styles.
+
+### Synchronous gRPC
+
+Used when the caller needs an immediate response.
+
+Examples:
+
+```text
+api-gateway -> catalog-service
+api-gateway -> basket-service
+api-gateway -> order-service
+order-service -> inventory-service
+order-service -> payment-service
+order-service -> shipping-service
+Asynchronous Kafka Events
+```
+### Asynchronous Kafka Events
+
+Used when one service needs to announce that something has happened.
+
+Examples:
+
+```text
+ProductCreated
+ProductUpdated
+StockReserved
+StockReservationFailed
+BasketCheckedOut
+OrderCreated
+OrderConfirmed
+PaymentAuthorised
+PaymentFailed
+ShipmentCreated
+NotificationRequested
+ReviewCreated
+SearchIndexUpdated
+RecommendationGenerated
+```
+Events allow downstream services to react without tightly coupling the originating service to every consumer.
+
 
 
 
