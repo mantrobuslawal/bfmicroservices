@@ -425,5 +425,324 @@ Stock reservation, payment authorisation, and shipment creation may be synchrono
 
 Notifications, search updates, analytics, and recommendations are asynchronous because the checkout request should not block on every downstream consumer.
 
+## Documentation
 
+The ```text docs/ directory``` is the main source of project documentation.
+```text
+docs/
+├── requirements/
+├── architecture/
+├── api/
+├── events/
+├── data/
+├── testing/
+├── security/
+├── observability/
+└── operations/
+```
+## Requirements
 
+```text docs/requirements/``` explains what the system must do.
+
+It includes:
+
+- Product vision
+- Scope
+- User journeys
+- Functional requirements
+- Non-functional requirements
+- Business rules
+- Acceptance criteria
+- Service-level requirements
+
+## Architecture
+
+```text docs/architecture/``` explains how the system is designed.
+
+It includes:
+
+- System context
+- Container view
+- Service boundaries
+- Domain model
+- Communication patterns
+- Event-driven design
+- Deployment view
+- Resilience patterns
+- Architecture diagrams
+- Trade-offs
+
+## API Documentation
+
+```text docs/api/``` explains the synchronous API model.
+
+It includes:
+
+- gRPC design
+- Protobuf style guide
+- API Gateway behaviour
+- Error model
+- Authentication
+- Versioning strategy
+
+## Event Documentation
+
+```text docs/events/``` explains the asynchronous messaging model.
+
+It includes:
+
+- Kafka topic design
+- Event envelope
+- Event catalogue
+- Event versioning
+- Ordering and idempotency
+- Retry and dead-letter queue strategy
+- Event replay strategy
+- Consumer contracts
+- Data Documentation
+
+## Data Documentation
+
+```text docs/data/``` explains service data ownership and persistence design.
+
+It includes:
+
+- Data ownership
+- MySQL standards
+- Service database design
+- Migration strategy
+- Consistency model
+- Data classification
+- Retention
+- PII handling
+
+## Testing Documentation
+
+```text docs/testing/``` defines the testing strategy.
+
+It covers:
+
+- Unit testing
+- Contract testing
+- Integration testing
+- End-to-end testing
+- Performance testing
+- Resilience testing
+- Chaos testing
+- Test environments
+
+## Security Documentation
+
+```text docs/security/``` explains application-level security.
+
+It covers:
+
+- Threat modelling
+- Authentication
+- Authorisation
+- Service-to-service security
+- Secrets management
+- Privacy and PII
+- Audit events
+- Secure coding
+- Supply-chain security
+
+Platform-wide zero trust, identity governance, CI/CD hardening, policy-as-code, and software supply-chain standards are defined in ```text bfstore-security-governance```.
+
+## Observability Documentation
+
+```text docs/observability/``` explains how the system is monitored and diagnosed.
+
+It covers:
+
+- Structured logging
+- Metrics
+- Distributed tracing
+- Dashboards
+- Alerts
+- SLOs
+- Kafka consumer lag
+
+## Operations Documentation
+
+```text docs/operations/``` explains how the system is released, operated, restored, and supported.
+
+It covers:
+
+- Runbooks
+- Deployment strategy
+- Release strategy
+- Rollback strategy
+- Database migration strategy
+- Incident response
+- Disaster recovery
+- Backup and restore
+- Cost controls
+- Production readiness
+
+## Architecture Decision Records
+
+The ```text adr/``` directory contains Architecture Decision Records.
+
+ADRs document significant decisions and their trade-offs.
+
+Examples:
+```text
+0001-use-microservices.md
+0002-use-grpc-for-service-communication.md
+0003-use-kafka-for-events.md
+0004-use-service-owned-databases.md
+0005-use-mysql.md
+0006-use-buf-for-protobuf.md
+0007-use-opentelemetry.md
+0008-use-contract-first-service-design.md
+```
+ADRs explain not only what was chosen, but why it was chosen.
+
+## Protobuf Contracts
+
+The ```text proto/``` directory contains shared protobuf definitions for gRPC APIs and Kafka event payloads.
+
+Example layout:
+
+```text
+proto/acme/
+├── common/v1/
+├── auth/v1/
+├── customer/v1/
+├── catalog/v1/
+├── inventory/v1/
+├── basket/v1/
+├── order/v1/
+├── payment/v1/
+├── shipping/v1/
+├── notification/v1/
+├── review/v1/
+├── search/v1/
+└── recommendation/v1/
+```
+
+Protobuf is used because it provides strongly typed contracts, supports code generation, and works well with gRPC and event-driven systems.
+
+Generated code should not be edited manually.
+
+## Service Design Principles
+
+Each service should:
+
+1. Own a clear business capability
+2. Expose a documented gRPC API
+3. Publish and consume documented events
+4. Own its own MySQL database/schema
+5. Avoid direct database access across services
+6. Emit structured logs, metrics, and traces
+7. Include health, readiness, and liveness checks
+8. Include unit, integration, and contract tests
+9. Be independently buildable and deployable
+10. Document operational behaviour and failure modes
+11. Define timeouts, retries, and idempotency rules where needed
+12. Provide a runbook and production readiness evidence
+
+## Local Development
+
+The local development environment is intended to run through Docker Compose.
+
+Expected local dependencies include:
+
+- MySQL
+- Kafka
+- Protobuf tooling
+- Optional observability components
+- Application services
+
+Typical commands:
+```bash
+</> Bash
+
+make dev-up
+make proto
+make migrate-up
+make test
+make run
+make dev-down
+```
+
+The exact commands may evolve as the project implementation matures.
+
+## Make Targets
+
+The root ```text Makefile``` exposes the following common development commands.
+
+```bash
+</> Bash
+
+make help          # Show available commands
+make dev-up        # Start local dependencies with Docker Compose
+make dev-down      # Stop local dependencies
+make proto         # Generate protobuf/gRPC code
+make lint          # Run linters
+make test          # Run unit tests
+make test-int      # Run integration tests
+make test-e2e      # Run end-to-end tests
+make test-perf     # Run performance tests
+make test-res      # Run resilience tests
+make migrate-up    # Apply database migrations
+make migrate-down  # Roll back database migrations
+make run           # Run services locally
+make build         # Build all services
+
+```
+
+## Database Migrations
+
+Each service owns its own migrations under:
+
+```text db/<service-name>/migrations/```
+### Example
+```text
+db/order/migrations/
+db/catalog/migrations/
+db/inventory/migrations/
+db/payment/migrations/
+```
+
+Local MySQL bootstrap scripts live under:
+
+```text db/mysql-init/```
+
+The local setup creates one logical database/schema per service and one least-privilege database user per service.
+
+## Testing Strategy
+
+bfstore uses several layers of testing.
+
+```text
+Unit tests
+    Validate individual functions and packages.
+
+Service integration tests
+    Validate a service with its database, Kafka, and dependencies.
+
+Contract tests
+    Validate protobuf, gRPC, and event compatibility.
+
+End-to-end tests
+    Validate complete user journeys across services.
+
+Performance tests
+    Validate latency, throughput, error rate, and behaviour under load.
+
+Resilience tests
+    Validate behaviour during dependency failures, retries, timeouts, duplicate events, and restarts.
+```
+
+Important resilience scenarios include:
+
+- Kafka unavailable
+- MySQL unavailable
+- Payment service slow
+- Inventory reservation failure
+- Duplicate Kafka events
+- Kafka consumer lag
+- Service restart during checkout
+- Network latency between services
