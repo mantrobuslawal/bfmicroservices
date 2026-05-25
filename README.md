@@ -335,6 +335,33 @@ bfstore-microservices and the wider ACME platform
 
 This separation reflects a realistic platform engineering model.
 
+## Data Ownership
+
+Each service owns its own MySQL database/schema.
+
+```text
+catalog-service          -> bfstore_catalog
+inventory-service        -> bfstore_inventory
+basket-service           -> bfstore_basket
+order-service            -> bfstore_order
+payment-service          -> bfstore_payment
+customer-service         -> bfstore_customer
+shipping-service         -> bfstore_shipping
+notification-service     -> bfstore_notification
+review-service           -> bfstore_review
+search-service           -> bfstore_search
+recommendation-service   -> bfstore_recommendation
+```
+
+Services must not directly access another service’s database.
+
+Services communicate through:
+
+- gRPC APIs
+- Kafka events
+- Documented protobuf contracts
+
+The API is the contract. The database is a private implementation detail owned by the service.
 
 
 
