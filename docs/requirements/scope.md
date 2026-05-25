@@ -743,6 +743,8 @@ Out of scope initially:
 - GDPR subject access automation
 - loyalty account management
 
+---
+
 ### 9.4 Catalogue Service
 
 In scope:
@@ -900,34 +902,204 @@ Out of scope initially:
 
 In scope:
 
-product search
-filtering
-faceted search
-search index update events
+- product search
+- filtering
+- faceted search
+- search index update events
 
 Out of scope initially:
 
-production OpenSearch cluster
-vector search
-semantic search
-personalised ranking
-9.13 Recommendation Service
+- production OpenSearch cluster
+- vector search
+- semantic search
+- personalised ranking
+
+---
+
+### 9.13 Recommendation Service
 
 In scope:
 
-related products
-popular products
-basic rules-based recommendations
-recommendation events
+- related products
+- popular products
+- basic rules-based recommendations
+- recommendation events
 
 Out of scope initially:
 
-machine learning model training
-feature store
-real-time personalisation
-A/B testing
+- machine learning model training
+- feature store
+- real-time personalisation
+-  A/B testing
 
 ---
+
+## 10. Non-Functional Scope
+
+The following quality attributes are in scope.
+
+| Category        | Scope                                                                               |
+| --------------- | ----------------------------------------------------------------------------------- |
+| Performance     | Define latency, throughput, and error-rate targets for key flows                    |
+| Reliability     | Design for retries, idempotency, and graceful degradation                           |
+| Availability    | Provide health/readiness checks and deployment readiness                            |
+| Scalability     | Design services so they can scale independently                                     |
+| Security        | Apply authentication, authorisation, least privilege, and secure delivery practices |
+| Observability   | Provide logs, metrics, traces, dashboards, and alerts                               |
+| Maintainability | Use clear service boundaries, docs, tests, and ADRs                                 |
+| Operability     | Provide runbooks, deployment docs, and rollback strategy                            |
+| Resilience      | Test behaviour under common dependency failures                                     |
+| Cost awareness  | Include local and cloud cost-control considerations                                 |
+
+
+---
+
+## 11. Scope Control Principles
+
+Scope decisions should follow these principles:
+
+### 11.1 Build a Working Vertical Slice First
+
+Prefer one complete business flow over many incomplete services.
+
+The first major target is:
+
+```browse -> basket -> checkout -> stock -> payment -> order -> shipment -> notification```
+
+### 11.2 Avoid Premature Platform Complexity
+
+Do not block application progress by implementing every platform capability first.
+
+Build enough platform support to run and test the app, then mature the platform iteratively.
+
+### 11.3 Keep Service Boundaries Clear
+
+Avoid adding “shared” services that become distributed utility layers.
+
+Each service should own a business capability.
+
+### 11.4 Prefer Mocked External Integrations Initially
+
+Mock payments, notifications, shipping, and external systems first.
+
+Real integrations can be added later if they strengthen the portfolio.
+
+### 11.5 Document Deferred Work
+
+If a feature is intentionally deferred, record it rather than silently ignoring it.
+
+---
+
+## 12. Assumptions
+
+This scope assumes:
+
+- ACME Ltd is fictional
+- bfstore is primarily a backend/platform portfolio project
+- Go will be used for backend services
+- MySQL will be used for relational persistence
+- Kafka will be used for asynchronous messaging
+- gRPC and protobuf will be used for internal service contracts
+- Docker Compose will support local development
+- Kubernetes will be the target deployment platform
+- cloud infrastructure will be handled in a separate repo
+- external third-party services may be mocked initially
+- the first version should prioritise a working checkout flow
+
+---
+
+## 13. Constraints
+
+The project is constrained by:
+
+- solo developer effort
+- need to keep local development affordable
+- desire to use mostly open-source tooling
+- portfolio value for Senior Platform Engineer, DevSecOps Engineer, and Kubernetes Platform Engineer roles
+- need to keep first delivery achievable
+- need to avoid unnecessary enterprise complexity before the core system works
+
+---
+
+## 14. Dependencies
+
+bfstore depends on:
+
+| Dependency     | Purpose                                                          |
+| -------------- | ---------------------------------------------------------------- |
+| Go             | Primary service implementation language                          |
+| MySQL          | Service-owned relational databases                               |
+| Kafka          | Asynchronous event messaging                                     |
+| Protobuf       | API and event contract definition                                |
+| gRPC           | Internal service communication                                   |
+| Docker Compose | Local development environment                                    |
+| Kubernetes     | Target runtime platform                                          |
+| Buf            | Protobuf linting, breaking change detection, and code generation |
+| OpenTelemetry  | Distributed tracing and telemetry instrumentation                |
+
+Wider platform dependencies may include:
+
+| Dependency                    | Purpose                |
+| ----------------------------- | ---------------------- |
+| Argo CD                       | GitOps deployment      |
+| Terraform/OpenTofu            | Infrastructure as code |
+| Backstage                     | Developer portal       |
+| Kyverno/OPA                   | Policy-as-code         |
+| Cosign                        | Image signing          |
+| Syft/Trivy/Grype              | SBOM and scanning      |
+| Prometheus/Grafana/Loki/Tempo | Observability          |
+
+---
+
+## 15. Deliverables
+
+### 15.1 Application Deliverables
+
+- service source code
+- protobuf contracts
+- Kafka event definitions
+- MySQL migrations
+- Dockerfiles
+- Docker Compose setup
+- Kubernetes manifests/charts
+- tests
+- documentation
+- ADRs
+  
+### 15.2 Documentation Deliverables
+
+- requirements documentation
+- architecture documentation
+- API documentation
+- event documentation
+- data ownership documentation
+- testing strategy
+- security documentation
+- observability documentation
+- operations documentation
+- runbooks
+- production readiness checklist
+
+### 15.3 Platform-Related Deliverables
+
+Within this repo:
+
+- app deployment artefacts
+- service security notes
+- application supply-chain pipeline notes
+- Kubernetes workload requirements
+
+Outside this repo:
+
+- cloud infra
+- GitOps state
+- reusable modules
+- platform security governance
+- developer platform
+
+---
+
+
 
 
 
