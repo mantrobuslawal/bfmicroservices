@@ -62,7 +62,7 @@ The design follows this principle:
 
 > Commands that require an immediate response use gRPC. Facts that have already happened are published as Kafka events.
 
-Example:
+### Example:
 
 ```text
 CreateOrder           -> gRPC command
@@ -75,7 +75,7 @@ PaymentAuthorised     -> Kafka event
 ShipmentCreated       -> Kafka event
 NotificationRequested -> Kafka event
 ```
-
+---
 ## High-Level System Flow
 
 The API Gateway exposes client-facing APIs and routes internal requests to backend services.
@@ -105,6 +105,8 @@ API Gateway
                   +--> Search Service
                   +--> Recommendation Service
 ```
+
+---
 
 ## Core Services
 
@@ -136,6 +138,8 @@ shipping-service
 notification-service
 api-gateway
 ```
+
+---
 
 ## Repository Layout
 
@@ -255,6 +259,8 @@ bfstore/
     └── pull_request_template.md
 ```
 
+---
+
 ## Repository Rationale
 
 This repository is structured as an application monorepo.
@@ -272,6 +278,8 @@ This makes it easier to:
 - Demonstrate the complete application architecture clearly
 
 The wider ACME platform estate is intentionally split into separate repositories so that application, infrastructure, security governance, GitOps, reusable modules, and developer platform concerns remain cleanly separated.
+
+---
 
 ## Wider ACME Platform Estate
 
@@ -335,6 +343,8 @@ bfstore-microservices and the wider ACME platform
 
 This separation reflects a realistic platform engineering model.
 
+---
+
 ## Data Ownership
 
 Each service owns its own MySQL database/schema.
@@ -363,6 +373,8 @@ Services communicate through:
 
 The API is the contract. The database is a private implementation detail owned by the service.
 
+---
+
 ## Communication Model
 
 bfstore uses two communication styles.
@@ -371,7 +383,7 @@ bfstore uses two communication styles.
 
 Used when the caller needs an immediate response.
 
-Examples:
+### Examples:
 
 ```text
 api-gateway -> catalog-service
@@ -386,7 +398,7 @@ Asynchronous Kafka Events
 
 Used when one service needs to announce that something has happened.
 
-Examples:
+### Examples:
 
 ```text
 ProductCreated
@@ -406,7 +418,7 @@ RecommendationGenerated
 ```
 Events allow downstream services to react without tightly coupling the originating service to every consumer.
 
-## Example Checkout Flow
+### Example Checkout Flow
 
 1. Customer submits checkout request
 2. API Gateway calls Order Service using gRPC
@@ -425,6 +437,8 @@ Stock reservation, payment authorisation, and shipment creation may be synchrono
 
 Notifications, search updates, analytics, and recommendations are asynchronous because the checkout request should not block on every downstream consumer.
 
+---
+
 ## Documentation
 
 The ```text docs/ directory``` is the main source of project documentation.
@@ -440,6 +454,9 @@ docs/
 ├── observability/
 └── operations/
 ```
+
+---
+
 ## Requirements
 
 ```text docs/requirements/``` explains what the system must do.
@@ -454,6 +471,8 @@ It includes:
 - Business rules
 - Acceptance criteria
 - Service-level requirements
+
+---
 
 ## Architecture
 
@@ -472,6 +491,8 @@ It includes:
 - Architecture diagrams
 - Trade-offs
 
+---
+
 ## API Documentation
 
 ```text docs/api/``` explains the synchronous API model.
@@ -484,6 +505,8 @@ It includes:
 - Error model
 - Authentication
 - Versioning strategy
+
+---
 
 ## Event Documentation
 
@@ -501,6 +524,8 @@ It includes:
 - Consumer contracts
 - Data Documentation
 
+---
+
 ## Data Documentation
 
 ```text docs/data/``` explains service data ownership and persistence design.
@@ -516,6 +541,8 @@ It includes:
 - Retention
 - PII handling
 
+---
+
 ## Testing Documentation
 
 ```text docs/testing/``` defines the testing strategy.
@@ -530,6 +557,8 @@ It covers:
 - Resilience testing
 - Chaos testing
 - Test environments
+
+---
 
 ## Security Documentation
 
@@ -549,6 +578,8 @@ It covers:
 
 Platform-wide zero trust, identity governance, CI/CD hardening, policy-as-code, and software supply-chain standards are defined in ```text bfstore-security-governance```.
 
+---
+
 ## Observability Documentation
 
 ```text docs/observability/``` explains how the system is monitored and diagnosed.
@@ -562,6 +593,8 @@ It covers:
 - Alerts
 - SLOs
 - Kafka consumer lag
+
+---
 
 ## Operations Documentation
 
@@ -580,13 +613,15 @@ It covers:
 - Cost controls
 - Production readiness
 
+---
+
 ## Architecture Decision Records
 
 The ```text adr/``` directory contains Architecture Decision Records.
 
 ADRs document significant decisions and their trade-offs.
 
-Examples:
+### Examples:
 ```text
 0001-use-microservices.md
 0002-use-grpc-for-service-communication.md
@@ -599,11 +634,13 @@ Examples:
 ```
 ADRs explain not only what was chosen, but why it was chosen.
 
+---
+
 ## Protobuf Contracts
 
 The ```text proto/``` directory contains shared protobuf definitions for gRPC APIs and Kafka event payloads.
 
-Example layout:
+### Example layout:
 
 ```text
 proto/acme/
@@ -626,6 +663,8 @@ Protobuf is used because it provides strongly typed contracts, supports code gen
 
 Generated code should not be edited manually.
 
+---
+
 ## Service Design Principles
 
 Each service should:
@@ -642,6 +681,8 @@ Each service should:
 10. Document operational behaviour and failure modes
 11. Define timeouts, retries, and idempotency rules where needed
 12. Provide a runbook and production readiness evidence
+
+---
 
 ## Local Development
 
@@ -669,6 +710,8 @@ make dev-down
 
 The exact commands may evolve as the project implementation matures.
 
+---
+
 ## Make Targets
 
 The root ```text Makefile``` exposes the following common development commands.
@@ -693,6 +736,8 @@ make build         # Build all services
 
 ```
 
+---
+
 ## Database Migrations
 
 Each service owns its own migrations under:
@@ -711,6 +756,8 @@ Local MySQL bootstrap scripts live under:
 ```text db/mysql-init/```
 
 The local setup creates one logical database/schema per service and one least-privilege database user per service.
+
+---
 
 ## Testing Strategy
 
