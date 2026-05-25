@@ -406,6 +406,24 @@ RecommendationGenerated
 ```
 Events allow downstream services to react without tightly coupling the originating service to every consumer.
 
+## Example Checkout Flow
+
+1. Customer submits checkout request
+2. API Gateway calls Order Service using gRPC
+3. Order Service validates the request
+4. Order Service requests stock reservation from Inventory Service
+5. Order Service requests payment authorisation from Payment Service
+6. Order Service creates the order
+7. Order Service requests shipment creation from Shipping Service
+8. Order Service publishes OrderCreated event
+9. Notification Service consumes event and sends confirmation
+10. Search and Recommendation services update downstream data where required
+
+This flow combines synchronous and asynchronous communication.
+
+Stock reservation, payment authorisation, and shipment creation may be synchronous because they affect whether the order can progress.
+
+Notifications, search updates, analytics, and recommendations are asynchronous because the checkout request should not block on every downstream consumer.
 
 
 
