@@ -2,38 +2,35 @@
 
 **bfstore** is a cloud-native microservice backend for a fictional online furniture store operated by **ACME Ltd**.
 
-The project is designed to demonstrate professional backend engineering, platform-aware application design, service boundaries, event-driven architecture, gRPC communication, protobuf contracts, Kafka messaging, service-owned databases, observability, testing, and deployment readiness.
-
-This repository contains the application code, service contracts, application documentation, local development configuration, tests, and deployment manifests for the bfstore backend.
+The project is designed to demonstrate production-style backend engineering and platform-aware application design. It forms the application layer of a wider ACME platform engineering portfolio covering Kubernetes, GitOps, cloud infrastructure, DevSecOps, software supply-chain security, observability, developer experience, and production operations.
 
 ---
 
 ## Project Goals
 
-The goal of this project is to build a realistic backend platform for an online furniture store while demonstrating production-style engineering practices.
-
-bfstore is intended to show:
+bfstore demonstrates:
 
 - Microservice architecture design
 - Domain-led service boundaries
-- gRPC-based internal service communication
+- gRPC-based service-to-service communication
 - Protobuf-based API and event contracts
 - Kafka-based asynchronous messaging
-- Service-owned databases
+- MySQL service-owned databases
 - Structured logging, metrics, and tracing
-- Contract, integration, end-to-end, and performance testing
-- Containerized local development
+- Contract, integration, end-to-end, performance, and resilience testing
+- Containerised local development
 - Kubernetes-ready deployment configuration
 - Secure software delivery practices
-- Clear documentation and architectural decision records
+- Production readiness documentation
+- Operational runbooks and failure-mode analysis
 
 ---
 
 ## Business Context
 
-ACME Ltd operates an online furniture store where customers can browse furniture, view product details, manage a basket, place orders, reserve stock, make payments, and receive order notifications.
+ACME Ltd operates an online furniture store where customers can browse products, manage a basket, place orders, reserve stock, make payments, arrange delivery, receive notifications, submit reviews, search the catalogue, and receive product recommendations.
 
-The backend is intentionally designed as a microservice system because the store contains several distinct business capabilities:
+The backend is designed as a microservice system because the store contains distinct business capabilities:
 
 - Product catalogue management
 - Inventory and stock reservation
@@ -41,10 +38,14 @@ The backend is intentionally designed as a microservice system because the store
 - Customer management
 - Order management
 - Payment processing
+- Shipping and fulfilment
 - Notification delivery
-- Authentication and authorization
+- Review management
+- Search
+- Recommendations
+- Authentication and authorisation
 
-Each capability is owned by a dedicated service with its own API, data model, and operational responsibilities.
+Each capability is owned by a dedicated service with its own API, data model, operational behaviour, and database boundary.
 
 ---
 
@@ -52,31 +53,34 @@ Each capability is owned by a dedicated service with its own API, data model, an
 
 bfstore uses a hybrid communication model:
 
-- **Synchronous communication** using gRPC
-- **Asynchronous communication** using Kafka events
+- **gRPC** for synchronous service-to-service requests
+- **Kafka** for asynchronous business events
 - **Protobuf** for service contracts and event payloads
+- **MySQL** for service-owned relational data stores
 
 The design follows this principle:
 
-> Commands that need an immediate result use gRPC. Facts that have already happened are published as Kafka events.
+> Commands that require an immediate response use gRPC. Facts that have already happened are published as Kafka events.
 
 Example:
 
 ```text
-CreateOrder          -> gRPC command
-ReserveStock         -> gRPC command
-AuthorizePayment     -> gRPC command
+CreateOrder           -> gRPC command
+ReserveStock          -> gRPC command
+AuthorisePayment      -> gRPC command
 
-OrderCreated         -> Kafka event
-StockReserved        -> Kafka event
-PaymentAuthorized    -> Kafka event
+OrderCreated          -> Kafka event
+StockReserved         -> Kafka event
+PaymentAuthorised     -> Kafka event
+ShipmentCreated       -> Kafka event
 NotificationRequested -> Kafka event
 ```
+
 ## High-Level System Flow
 
 The API Gateway exposes client-facing APIs and routes internal requests to backend services.
 
-The backend services communicate through gRPC when they need a direct response, and publish Kafka events when other services need to react asynchronously.
+Services communicate through gRPC when a direct response is required. Services publish Kafka events when downstream services need to react asynchronously.
 
 ```text
 Customer / Frontend
@@ -92,33 +96,46 @@ API Gateway
                   |
                   +--> Inventory Service
                   +--> Payment Service
+                  +--> Shipping Service
                   |
                   v
                 Kafka
                   |
                   +--> Notification Service
-                  +--> Shipping Service
-                  +--> Analytics Consumers
+                  +--> Search Service
+                  +--> Recommendation Service
 ```
+
 ## Core Services
 
-| Service | Responsibility |
-|---|---|
-| `api-gateway` | Public entry point for frontend clients |
-| `auth-service` | Authentication, authorization, tokens, user sessions |
-| `customer-service` | Customer profiles, addresses, preferences |
-| `catalog-service` | Products, categories, furniture details, pricing |
-| `inventory-service` | Stock levels, stock reservations, warehouse availability |
-| `basket-service` | Customer basket and basket items |
-| `order-service` | Order creation, order lifecycle, order history |
-| `payment-service` | Payment authorization, capture, refunds |
-| `shipping-service` | Delivery options, shipment creation, fulfilment status, tracking updates |
-| `notification-service` | Email/SMS/event-driven customer notifications |
-| `review-service` | Product reviews, ratings, moderation status |
-| `search-service` | Product search, filtering, faceted search, search index updates |
-| `recommendation-service` | Product recommendations, related items, personalised suggestions |
+| Service                  | Responsibility                                                           |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `api-gateway`            | Public entry point for frontend clients                                  |
+| `auth-service`           | Authentication, authorisation, tokens, user sessions                     |
+| `customer-service`       | Customer profiles, addresses, preferences                                |
+| `catalog-service`        | Products, categories, furniture details, pricing                         |
+| `inventory-service`      | Stock levels, stock reservations, warehouse availability                 |
+| `basket-service`         | Customer basket and basket items                                         |
+| `order-service`          | Order creation, order lifecycle, order history                           |
+| `payment-service`        | Payment authorisation, capture, refunds                                  |
+| `shipping-service`       | Delivery options, shipment creation, fulfilment status, tracking updates |
+| `notification-service`   | Email/SMS/event-driven customer notifications                            |
+| `review-service`         | Product reviews, ratings, moderation status                              |
+| `search-service`         | Product search, filtering, faceted search, search index updates          |
+| `recommendation-service` | Product recommendations, related items, personalised suggestions         |
 
-These services represent the target service landscape for bfstore. The initial implementation may focus on a smaller vertical slice first, such as catalogue, inventory, basket, order, payment, shipping, and notification, before expanding into reviews, search, and recommendations.
+The initial implementation may focus on a smaller vertical slice first:
+
+```text
+catalog-service
+inventory-service
+basket-service
+order-service
+payment-service
+shipping-service
+notification-service
+api-gateway
+```
 
 ## Repository Layout
 
@@ -129,8 +146,12 @@ bfstore/
 ├── docker-compose.yml
 ├── buf.yaml
 ├── buf.gen.yaml
+├── .env.example
+├── .gitignore
+├── .editorconfig
 │
 ├── docs/
+│   ├── README.md
 │   ├── requirements/
 │   ├── architecture/
 │   ├── api/
@@ -146,18 +167,27 @@ bfstore/
 │   ├── 0001-use-microservices.md
 │   ├── 0002-use-grpc-for-service-communication.md
 │   ├── 0003-use-kafka-for-events.md
-│   └── 0004-use-service-owned-databases.md
+│   ├── 0004-use-service-owned-databases.md
+│   ├── 0005-use-mysql.md
+│   ├── 0006-use-buf-for-protobuf.md
+│   ├── 0007-use-opentelemetry.md
+│   └── 0008-use-contract-first-service-design.md
 │
 ├── proto/
 │   └── acme/
 │       ├── common/
+│       ├── auth/
+│       ├── customer/
 │       ├── catalog/
 │       ├── inventory/
 │       ├── basket/
 │       ├── order/
 │       ├── payment/
-│       ├── customer/
-│       └── notification/
+│       ├── shipping/
+│       ├── notification/
+│       ├── review/
+│       ├── search/
+│       └── recommendation/
 │
 ├── services/
 │   ├── api-gateway/
@@ -168,7 +198,11 @@ bfstore/
 │   ├── basket-service/
 │   ├── order-service/
 │   ├── payment-service/
-│   └── notification-service/
+│   ├── shipping-service/
+│   ├── notification-service/
+│   ├── review-service/
+│   ├── search-service/
+│   └── recommendation-service/
 │
 ├── packages/
 │   └── go/
@@ -178,16 +212,25 @@ bfstore/
 │       ├── kafka/
 │       ├── telemetry/
 │       ├── auth/
-│       └── errors/
+│       ├── errors/
+│       ├── health/
+│       ├── middleware/
+│       └── testkit/
 │
 ├── db/
+│   ├── README.md
+│   ├── mysql-init/
 │   ├── catalog/
 │   ├── inventory/
 │   ├── basket/
 │   ├── order/
 │   ├── payment/
 │   ├── customer/
-│   └── notification/
+│   ├── shipping/
+│   ├── notification/
+│   ├── review/
+│   ├── search/
+│   └── recommendation/
 │
 ├── deploy/
 │   ├── docker/
@@ -200,6 +243,7 @@ bfstore/
 │   ├── integration/
 │   ├── e2e/
 │   ├── performance/
+│   ├── resilience/
 │   └── testdata/
 │
 ├── tools/
@@ -210,3 +254,88 @@ bfstore/
     ├── dependabot.yml
     └── pull_request_template.md
 ```
+
+## Repository Rationale
+
+This repository is structured as an application monorepo.
+
+The microservices, protobuf contracts, shared Go packages, service documentation, local development tooling, database migrations, deployment manifests, and tests live together because they are tightly related.
+
+This makes it easier to:
+
+- Review the full backend system in one place
+- Evolve service contracts alongside implementations
+- Run local integration environments
+- Keep documentation close to code
+- Coordinate cross-service tests
+- Share internal Go packages safely
+- Demonstrate the complete application architecture clearly
+
+The wider ACME platform estate is intentionally split into separate repositories so that application, infrastructure, security governance, GitOps, reusable modules, and developer platform concerns remain cleanly separated.
+
+## Wider ACME Platform Estate
+
+bfstore is the application backend repository. It is part of a wider ACME Ltd platform engineering estate:
+
+```text
+mantrobuslawal/
+├── bfstore-microservices
+├── bfstore-platform-infra
+├── bfstore-platform-gitops
+├── bfstore-terraform-modules
+├── bfstore-security-governance
+└── bfstore-developer-platform
+```
+
+| Repository                 | Purpose                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| `bfstore-mircorservices`                  | Application backend, services, protobuf, events, MySQL schemas, tests, app docs      |
+| `bfstore-platform-infra`      | Cloud infrastructure, VPCs, Kubernetes, Kafka, MySQL, observability, CI/CD runners   |
+| `bfstore-platform-gitops`     | Desired Kubernetes state for apps, platform add-ons, policies, and environments      |
+| `bfstore-terraform-modules`   | Versioned reusable infrastructure modules                                            |
+| `bfstore-security-governance` | Zero trust, identity, secrets, policy-as-code, threat models, supply-chain standards |
+| `bfstore-developer-platform`  | Backstage, golden paths, production readiness scorecards, service templates          |
+
+
+The relationship between the repositories is:
+
+```text
+bfstore-microservices
+    Application source, service contracts, app tests, app docs
+        |
+        | container images deployed by
+        v
+bfstore-platform-gitops
+    Desired Kubernetes state for apps, platform add-ons, and policies
+        |
+        | runs on infrastructure built by
+        v
+bfstore-platform-infra
+    Cloud environments, VPCs, Kubernetes, Kafka, MySQL, observability, runners
+        |
+        | consumes reusable modules from
+        v
+bfstore-terraform-modules
+    Versioned, tested, reusable infrastructure modules
+
+bfstore-security-governance
+    Defines standards, policies, threat models, supply-chain controls
+        |
+        | governs
+        v
+bfstore-microservices + bfstore-platform-infra + bfstore-platform-gitops + bfstore-terraform-modules
+
+bfstore-developer-platform
+    Provides Backstage, golden paths, scorecards, and service templates
+        |
+        | supports developers building and operating
+        v
+bfstore-microservices and the wider ACME platform
+```
+
+This separation reflects a realistic platform engineering model.
+
+
+
+
+
