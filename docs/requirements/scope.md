@@ -1099,10 +1099,73 @@ Outside this repo:
 
 ---
 
+## 16. Acceptance of Scope
 
+The scope for the initial version is considered satisfied when:
 
+- the initial vertical slice is documented
+- protobuf contracts exist for the initial services
+- the initial services can run locally
+- the services use separate MySQL databases/schemas
+- checkout flow can be executed end to end
+- relevant Kafka events are published and consumed
+- core tests pass
+- basic observability exists
+- core docs are present and accurate
+- deferred items are clearly documented
 
+---
 
+## 17. Scope Risks
+
+| Risk                            | Description                                                  | Mitigation                                      |
+| ------------------------------- | ------------------------------------------------------------ | ----------------------------------------------- |
+| Scope creep                     | Too many features may be attempted too early                 | Build the checkout vertical slice first         |
+| Too many services               | Service count may slow development                           | Implement target services in phases             |
+| Platform overload               | Kubernetes, GitOps, and security work may delay app delivery | Build local app first, then platform maturity   |
+| Over-documentation              | Documentation may delay implementation                       | Write enough to guide work, then iterate        |
+| Under-documentation             | Missing docs may weaken portfolio value                      | Keep docs updated as part of each change        |
+| External integration complexity | Real providers may distract from architecture                | Use mocks or simulators initially               |
+| Local environment becomes heavy | Too many services may make local dev slow                    | Use Compose profiles and phased service startup |
+
+---
+
+## 18. Change Control
+
+Scope changes should be recorded when they affect:
+
+- service boundaries
+- core workflows
+- data ownership
+- API contracts
+- event contracts
+- deployment model
+- security model
+- testing strategy
+- operational responsibilities
+
+Larger decisions should be documented using ADRs in:
+```adr/```
+
+Examples:
+
+```text
+adr/0001-use-microservices.md
+adr/0002-use-grpc-for-service-communication.md
+adr/0003-use-kafka-for-events.md
+adr/0004-use-service-owned-databases.md
+adr/0005-use-mysql.md
+```
+
+---
+
+## 19. Summary
+
+bfstore is scoped as a realistic cloud-native backend for ACME Ltd’s online furniture store.
+
+The first priority is a working checkout vertical slice. The broader target is a well-documented, observable, secure, testable, Kubernetes-ready microservice system that fits into a wider ACME platform engineering estate.
+
+The scope is intentionally ambitious, but it should be delivered in phases to avoid unnecessary complexity before the core product flow works.
 
 
 
