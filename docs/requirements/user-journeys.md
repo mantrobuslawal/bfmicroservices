@@ -545,4 +545,448 @@ Then the system rejects the registration
 
 ---
 
+UJ-005: Sign In
+Goal
+
+A registered customer wants to sign in to access protected actions.
+
+Primary Actor
+
+Registered Customer
+
+Priority
+
+Should
+
+Initial Version
+
+Optional for first vertical slice if using test identity.
+
+Services Involved
+
+| Service        | Responsibility                                 |
+| -------------- | ---------------------------------------------- |
+| `api-gateway`  | Receives login request                         |
+| `auth-service` | Validates credentials and issues token/session |
+
+Preconditions
+Customer account exists.
+Customer credentials are valid.
+Auth Service is available.
+Main Success Flow
+Customer submits email and password.
+API Gateway sends credentials to Auth Service.
+Auth Service verifies password.
+Auth Service issues access token/session.
+API Gateway returns authentication response.
+Failure Flows
+F1: Invalid Credentials
+Customer submits incorrect credentials.
+Auth Service rejects the request.
+API Gateway returns authentication failure.
+F2: Account Locked or Disabled
+Customer submits credentials for locked account.
+Auth Service rejects the request.
+Audit event is recorded.
+Events
+
+Potential events:
+
+CustomerSignedIn
+FailedLoginAttempted
+
+Acceptance Criteria
+
+Given valid credentials
+When a customer signs in
+Then the system returns an authentication token or session
+Given invalid credentials
+When a customer signs in
+Then the system rejects the request
+
+---
+
+UJ-006: Manage Customer Profile and Addresses
+Goal
+
+A registered customer wants to manage their profile and delivery addresses.
+
+Primary Actor
+
+Registered Customer
+
+Priority
+
+Should
+
+Initial Version
+
+Later phase.
+
+Services Involved
+
+| Service            | Responsibility                                    |
+| ------------------ | ------------------------------------------------- |
+| `api-gateway`      | Receives profile/address requests                 |
+| `customer-service` | Stores and manages customer profile and addresses |
+| `auth-service`     | Provides identity and authorisation context       |
+
+
+Main Success Flow
+
+Customer signs in.
+Customer opens profile settings.
+Customer adds or updates delivery address.
+API Gateway calls Customer Service.
+Customer Service validates and stores the address.
+Updated profile/address is returned.
+
+Business Rules
+
+A customer may have multiple delivery addresses.
+One address may be marked as default.
+Checkout requires a valid delivery address.
+Sensitive customer data must not be logged.
+Events
+
+Possible events:
+
+CustomerProfileUpdated
+CustomerAddressAdded
+CustomerAddressUpdated
+
+Acceptance Criteria
+
+Given a signed-in customer
+When the customer adds a valid delivery address
+Then the address is saved to the customer profile
+
+---
+
+UJ-007: Add Product to Basket
+Goal
+
+A customer wants to add a furniture product to their basket.
+
+Primary Actor
+
+Customer
+
+Priority
+
+Must
+
+Services Involved
+
+| Service             | Responsibility                                |
+| ------------------- | --------------------------------------------- |
+| `api-gateway`       | Receives add-to-basket request                |
+| `basket-service`    | Manages basket state                          |
+| `catalog-service`   | Validates product existence and active status |
+| `inventory-service` | Optionally validates availability             |
+
+Preconditions
+
+Product exists.
+Product is active.
+Requested quantity is valid.
+Basket Service is available.
+
+Main Success Flow
+
+Customer selects product and quantity.
+API Gateway receives add-to-basket request.
+API Gateway calls Basket Service.
+Basket Service validates product through Catalogue Service.
+Basket Service may check availability through Inventory Service.
+Basket Service adds item to basket.
+Updated basket is returned.
+
+Business Rules
+
+Quantity must be greater than zero.
+Inactive products cannot be added.
+Basket should store product ID, quantity, and price snapshot where needed.
+Basket does not reserve stock. Stock is reserved during checkout.
+
+Alternative Flows
+
+A1: Product Already in Basket
+
+Customer adds a product already in basket.
+Basket Service increases quantity or updates existing basket item.
+Updated basket is returned.
+
+A2: Product Available But Low Stock
+
+Customer requests a quantity higher than currently available.
+Basket Service rejects or adjusts depending on business rule.
+
+Failure Flows
+
+F1: Product Not Found
+
+Basket Service validates product.
+Catalogue Service returns not found.
+Basket Service rejects add-to-basket request.
+
+F2: Product Inactive
+
+Product exists but is inactive.
+Basket Service rejects request.
+
+Events
+
+Potential event:
+
+```BasketItemAdded```
+
+This may be deferred unless needed for analytics or recommendations.
+
+Acceptance Criteria
+
+```text
+Given an active product exists
+When a customer adds the product to their basket
+Then the basket contains the product and requested quantity
+
+Given a product is inactive
+When a customer adds the product to their basket
+Then the system rejects the request
+```
+
+---
+
+UJ-008: Update Basket
+Goal
+
+A customer wants to update the quantity of an item or remove an item from their basket.
+
+Primary Actor
+
+Customer
+
+Priority
+
+Must
+
+Services Involved
+
+| Service             | Responsibility                              |
+| ------------------- | ------------------------------------------- |
+| `api-gateway`       | Receives update request                     |
+| `basket-service`    | Updates basket item quantities and removals |
+| `catalog-service`   | Optional product validation                 |
+| `inventory-service` | Optional availability check                 |
+
+Preconditions
+
+Basket exists.
+Basket item exists.
+Requested update is valid.
+
+Main Success Flow
+
+Customer changes item quantity.
+API Gateway sends update to Basket Service.
+Basket Service validates quantity.
+Basket Service updates basket.
+Updated basket is returned.
+
+Alternative Flows
+
+A1: Quantity Set to Zero
+
+Customer sets quantity to zero.
+Basket Service removes item from basket.
+Updated basket is returned.
+
+A2: Basket Becomes Empty
+
+Customer removes final basket item.
+Basket Service returns empty basket.
+
+Business Rules
+
+Quantity cannot be negative.
+Quantity zero means remove item.
+Basket updates do not reserve stock.
+Basket prices may be recalculated or use stored price snapshots depending on design decision.
+
+Events
+
+Possible events:
+```text
+BasketItemUpdated
+BasketItemRemoved
+BasketEmptied
+```
+
+Acceptance Criteria
+
+```text
+Given a basket contains an item
+When the customer updates the item quantity
+Then the basket reflects the new quantity
+
+Given a basket contains an item
+When the customer removes the item
+Then the item is no longer present in the basket
+```
+
+---
+
+UJ-009: Checkout and Create Order
+
+Goal
+
+A customer wants to checkout and create an order.
+
+Primary Actor
+
+Customer
+
+Priority
+
+Must
+
+Services Involved
+
+| Service                | Responsibility                        |
+| ---------------------- | ------------------------------------- |
+| `api-gateway`          | Receives checkout request             |
+| `basket-service`       | Provides basket contents              |
+| `order-service`        | Coordinates order creation            |
+| `inventory-service`    | Reserves stock                        |
+| `payment-service`      | Authorises payment                    |
+| `shipping-service`     | Creates shipment                      |
+| `notification-service` | Sends confirmation asynchronously     |
+| `Kafka`                | Carries order and notification events |
+
+Preconditions
+
+Customer has a non-empty basket.
+Basket items are valid.
+Delivery address exists or is supplied.
+Stock is available.
+Payment details are accepted by Payment Service or simulated provider.
+Required services are available.
+
+Main Success Flow
+
+Customer submits checkout request.
+API Gateway calls Order Service.
+Order Service retrieves or validates basket.
+Order Service requests stock reservation from Inventory Service.
+Inventory Service reserves stock.
+Order Service requests payment authorisation from Payment Service.
+Payment Service authorises payment.
+Order Service creates order.
+Order Service requests shipment creation from Shipping Service.
+Shipping Service creates shipment.
+Order Service publishes OrderCreated.
+Order Service returns order confirmation.
+Notification Service consumes event and sends confirmation.
+
+Synchronous Calls
+
+```text
+api-gateway -> order-service
+order-service -> basket-service
+order-service -> inventory-service
+order-service -> payment-service
+order-service -> shipping-service
+```
+
+Events Published
+
+```text 
+StockReserved
+PaymentAuthorised
+ShipmentCreated
+OrderCreated
+NotificationRequested
+```
+
+Business Rules
+
+An order cannot be confirmed unless stock is reserved.
+An order cannot be confirmed unless payment is authorised.
+A basket must not be empty at checkout.
+Checkout should be idempotent where possible.
+Duplicate checkout submissions must not create duplicate confirmed orders.
+Sensitive payment data must not be logged.
+
+Failure Flows
+
+F1: Basket Empty
+
+Customer attempts checkout.
+Order Service detects empty basket.
+Checkout is rejected.
+
+F2: Stock Reservation Fails
+
+Order Service requests stock reservation.
+Inventory Service returns insufficient stock.
+Order Service rejects checkout.
+Payment is not attempted.
+
+F3: Payment Authorisation Fails
+
+Stock reservation succeeds.
+Payment Service rejects payment.
+Order Service marks checkout failed.
+Stock reservation is released or allowed to expire.
+Customer receives payment failure response.
+
+F4: Shipment Creation Fails
+
+Stock reservation and payment authorisation succeed.
+Shipping Service fails to create shipment.
+Order Service must handle failure according to design decision:
+fail order creation and compensate
+create order in pending fulfilment state
+retry shipment creation asynchronously
+
+F5: Duplicate Checkout Request
+
+Customer submits same checkout request twice.
+Order Service detects idempotency key or duplicate request.
+Existing order result is returned rather than creating a duplicate order.
+
+Observability Requirements
+
+End-to-end trace from API Gateway to all services.
+Correlation ID across gRPC calls and Kafka events.
+Metrics for checkout success and failure.
+Metrics for stock reservation failures.
+Metrics for payment failures.
+Metrics for checkout latency.
+Logs must include order ID once created.
+Logs must not include sensitive payment data.
+
+Acceptance Criteria
+
+```text
+Given a customer has a valid basket and stock is available
+When the customer checks out with valid payment details
+Then stock is reserved, payment is authorised, an order is created, a shipment is created, and an OrderCreated event is published
+
+Given stock is unavailable
+When the customer checks out
+Then the order is not created and payment is not authorised
+
+Given payment authorisation fails
+When the customer checks out
+Then the order is not confirmed and the customer receives a payment failure response
+```
+
+---
+
+
+
+
+
+
 
