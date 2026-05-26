@@ -1,5 +1,7 @@
 # bfstore — Borough Furniture Store
 
+![bfstore - Borough Furniture Store logo](docs/assets/bfstore-logo.png)
+
 ## 1. Overview
 
 **bfstore** is the backend platform for **Borough Furniture Store**, a fictional cloud-native ecommerce company used to demonstrate senior-level platform engineering, DevSecOps, Kubernetes, microservices, observability, testing, and cloud infrastructure skills.
