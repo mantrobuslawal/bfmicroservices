@@ -4,9 +4,7 @@
 
 This document defines MySQL standards for **bfstore**, ACME Ltd’s fictional online furniture store backend.
 
-It establishes conventions for schema naming, table design, column naming, data types, indexing, constraints, timestamps, transactions, permissions, and operational behaviour.
-
-This document is intended for engineers, reviewers, technical leads, and potential clients evaluating bfstore’s database design discipline.
+It establishes conventions for schema naming, table design, column naming, data types, indexing, constraints, timestamps, transactions, permissions, flexible product attributes, and operational behaviour.
 
 ---
 
@@ -29,26 +27,6 @@ bfstore_search
 bfstore_recommendation
 ```
 
-It covers:
-
-```text
-schema naming
-table naming
-column naming
-data types
-primary keys
-foreign keys
-indexes
-timestamps
-money representation
-JSON usage
-transactions
-database users
-local development
-security
-testing
-```
-
 ---
 
 ## 3. Design Goals
@@ -62,7 +40,7 @@ bfstore MySQL usage should be:
 | Secure | Database permissions follow least privilege |
 | Auditable | Important changes can be traced |
 | Performant | Indexes support known access patterns |
-| Portable | Avoid unnecessary vendor-specific complexity |
+| Flexible | Product types can vary without uncontrolled schema sprawl |
 | Maintainable | Migrations and naming are easy to review |
 | Testable | Database behaviour can be validated in CI |
 
@@ -97,8 +75,6 @@ use business domain name
 avoid environment names inside schema names unless platform requires it
 ```
 
-Environment separation should ideally be handled by separate databases, instances, clusters, or configuration.
-
 ---
 
 ## 5. Table Naming
@@ -110,6 +86,8 @@ Good:
 ```text
 products
 product_variants
+product_attribute_definitions
+product_attribute_values
 stock_reservations
 basket_items
 orders
@@ -140,6 +118,7 @@ Good:
 
 ```text
 product_id
+attribute_id
 created_at
 updated_at
 idempotency_key
@@ -168,6 +147,8 @@ Recommended:
 
 ```text
 product_id
+category_id
+attribute_id
 order_id
 payment_id
 shipment_id
@@ -177,6 +158,7 @@ notification_id
 For internal child records:
 
 ```text
+product_attribute_value_id
 order_item_id
 payment_attempt_id
 notification_attempt_id
@@ -217,8 +199,6 @@ prefixed IDs
 external provider references where appropriate
 ```
 
-If binary UUIDs are later chosen for storage efficiency, the decision should be documented and hidden behind service APIs.
-
 ---
 
 ## 9. Timestamps
@@ -232,20 +212,6 @@ created_at
 updated_at
 deleted_at
 ```
-
-Column type:
-
-```sql
-TIMESTAMP(6)
-```
-
-or:
-
-```sql
-DATETIME(6)
-```
-
-The final choice should be consistent across the project.
 
 Recommended default pattern:
 
@@ -274,21 +240,14 @@ Potential use cases:
 
 ```text
 products
+categories
+attribute definitions
 customer addresses
 notification templates
 reviews
 ```
 
 Avoid soft deletes on every table by default.
-
-If soft delete is used:
-
-```text
-include deleted_at
-ensure queries filter deleted records correctly
-consider uniqueness constraints carefully
-document retention behaviour
-```
 
 ---
 
@@ -305,25 +264,195 @@ amount_minor BIGINT NOT NULL,
 currency_code CHAR(3) NOT NULL
 ```
 
-Examples:
-
-```text
-129900 GBP = £1,299.00
-4999 GBP = £49.99
-```
-
 Rules:
 
 ```text
 use BIGINT for monetary amounts
-use ISO currency code
+use ISO-style currency code
 avoid FLOAT and DOUBLE for money
 document tax and discount handling separately
 ```
 
 ---
 
-## 12. Quantities
+## 12. Flexible Product Attribute Standards
+
+## 12.1 Principle
+
+Catalogue Service should use relational core product tables plus category-scoped flexible attributes.
+
+This supports varied product types without creating one large products table with many nullable columns.
+
+Examples:
+
+```text
+curtains need drop, width, lining, heading type
+bed frames need bed size, frame material, storage type
+rugs need shape, pile height, weave, material
+lamps need bulb type, wattage, fitting type
+```
+
+## 12.2 Recommended Tables
+
+```text
+categories
+products
+product_variants
+product_attribute_definitions
+product_attribute_values
+product_attribute_options
+```
+
+## 12.3 Attribute Definitions
+
+`product_attribute_definitions` should define which attributes apply to which categories.
+
+Recommended fields:
+
+```text
+attribute_id
+category_id
+code
+display_name
+description
+data_type
+unit
+is_required
+is_filterable
+is_variant_defining
+allowed_values_json
+display_order
+status
+created_at
+updated_at
+```
+
+## 12.4 Attribute Values
+
+`product_attribute_values` should store product-specific values.
+
+Recommended fields:
+
+```text
+product_attribute_value_id
+product_id
+variant_id
+attribute_id
+value_string
+value_number
+value_boolean
+value_json
+unit
+created_at
+updated_at
+```
+
+Rules:
+
+```text
+only one typed value column should be populated per row
+attribute definition determines expected type
+variant_id should be nullable unless value differs by variant
+attribute_id should reference an attribute definition within the catalogue schema
+```
+
+## 12.5 Attribute Data Types
+
+Supported attribute data types should be controlled.
+
+Recommended initial values:
+
+```text
+string
+number
+boolean
+json
+option
+multi_option
+```
+
+Avoid uncontrolled free-form data types.
+
+## 12.6 Attribute Codes
+
+Attribute codes should be stable and machine-readable.
+
+Good:
+
+```text
+drop_cm
+width_cm
+heading_type
+bed_size
+storage_type
+bulb_type
+rug_shape
+material
+colour
+```
+
+Avoid:
+
+```text
+Drop CM
+Curtain Drop!!!
+misc1
+field_27
+```
+
+## 12.7 Controlled Attribute Values
+
+For attributes used as filters, controlled values are preferred.
+
+Examples:
+
+```text
+bed_size: single, double, king, super_king
+heading_type: eyelet, pencil_pleat, tab_top
+storage_type: none, drawer, ottoman
+```
+
+Controlled values may be represented using:
+
+```text
+product_attribute_options table
+allowed_values_json field
+```
+
+For early implementation, `allowed_values_json` is acceptable if documented and tested.
+
+## 12.8 Search Projection
+
+Do not force Search Service behaviour into the Catalogue database.
+
+Catalogue should govern product attributes.
+
+Search Service should denormalise product data into browse/search documents.
+
+Rules:
+
+```text
+Catalogue owns attribute truth
+Search owns search documents and facets
+filterable attributes should be clearly identified
+search projections should be rebuildable
+```
+
+## 12.9 Anti-Patterns
+
+Avoid:
+
+```text
+one products table with hundreds of nullable type-specific columns
+uncontrolled JSON blobs for all product data
+attributes with no category ownership
+filterable fields hidden in ungoverned JSON
+Search Service becoming the product source of truth
+```
+
+---
+
+## 13. Quantities
 
 Use integer types for quantities.
 
@@ -342,15 +471,9 @@ reserved stock must not be negative
 use constraints where practical
 ```
 
-Example:
-
-```sql
-CHECK (quantity > 0)
-```
-
 ---
 
-## 13. Status Columns
+## 14. Status Columns
 
 Status columns should use stable string values or small enums.
 
@@ -363,31 +486,24 @@ status VARCHAR(32) NOT NULL
 Examples:
 
 ```text
+ACTIVE
+INACTIVE
 PENDING
 CONFIRMED
 CANCELLED
 FAILED
 ```
 
-Rules:
-
-```text
-status values must be documented
-state transitions should be enforced in application logic
-important state changes should be recorded in history tables
-avoid ambiguous statuses such as ACTIVE2 or TEMP
-```
-
 ---
 
-## 14. Boolean Columns
+## 15. Boolean Columns
 
 Use boolean columns for true or false values.
 
 Example:
 
 ```sql
-is_active BOOLEAN NOT NULL DEFAULT TRUE
+is_filterable BOOLEAN NOT NULL DEFAULT FALSE
 ```
 
 Rules:
@@ -399,7 +515,7 @@ avoid nullable booleans unless three states are genuinely needed
 
 ---
 
-## 15. JSON Columns
+## 16. JSON Columns
 
 JSON columns are allowed, but should be used deliberately.
 
@@ -408,9 +524,10 @@ Acceptable uses:
 ```text
 snapshots
 provider metadata
-flexible product attributes
+allowed product attribute values in early implementation
 event outbox payloads
 audit context
+selected attribute summaries
 ```
 
 Avoid using JSON for core relational data that needs frequent filtering, joining, or constraints.
@@ -420,11 +537,14 @@ Good:
 ```text
 delivery_address_snapshot_json
 provider_response_summary_json
+selected_attribute_summary_json
+allowed_values_json
 ```
 
 Risky:
 
 ```text
+entire_product_json
 order_items_json
 payment_state_json
 ```
@@ -440,7 +560,7 @@ index generated columns only where justified
 
 ---
 
-## 16. Constraints
+## 17. Constraints
 
 Use constraints to protect core invariants where practical.
 
@@ -451,47 +571,48 @@ CHECK (quantity > 0)
 CHECK (amount_minor >= 0)
 UNIQUE (idempotency_key)
 UNIQUE (order_number)
+UNIQUE (category_id, code)
 ```
 
-Rules:
+For product attributes, enforce uniqueness such as:
 
 ```text
-use NOT NULL for required fields
-use UNIQUE for natural uniqueness where required
-use CHECK constraints for simple invariants
-do not rely only on application validation for critical data integrity
+one attribute definition code per category
+one product-level value per product and attribute where appropriate
+one variant-level value per variant and attribute where appropriate
 ```
 
 ---
 
-## 17. Foreign Keys
+## 18. Foreign Keys
 
-## 17.1 Within Schema
+## 18.1 Within Schema
 
 Foreign keys are allowed within the same service-owned schema.
 
-Example:
+Examples:
 
-```sql
+```text
+product_attribute_values.attribute_id -> product_attribute_definitions.attribute_id
+product_variants.product_id -> products.product_id
 order_items.order_id -> orders.order_id
 ```
 
-## 17.2 Across Schemas
+## 18.2 Across Schemas
 
 Foreign keys across service schemas are not allowed.
 
 Avoid:
 
-```sql
-bfstore_order.order_items.product_id
-    -> bfstore_catalog.products.product_id
+```text
+bfstore_order.order_items.product_id -> bfstore_catalog.products.product_id
 ```
 
-Use service APIs, events, or snapshots instead.
+Use service APIs, events, snapshots, or projections instead.
 
 ---
 
-## 18. Indexing Standards
+## 19. Indexing Standards
 
 Indexes should be created for known access patterns.
 
@@ -509,29 +630,22 @@ idempotency_key
 event_id
 ```
 
-Examples:
-
-```sql
-CREATE INDEX idx_orders_customer_created_at
-ON orders (customer_id, created_at);
-
-CREATE UNIQUE INDEX uq_orders_idempotency_key
-ON orders (idempotency_key);
-```
-
-Rules:
+Catalogue-specific indexes:
 
 ```text
-index names should be clear
-avoid unused indexes
-avoid over-indexing write-heavy tables
-review query plans for important queries
-include indexes in migrations
+idx_products_category_status
+idx_product_variants_product_id
+idx_attribute_definitions_category_code
+idx_attribute_definitions_filterable
+idx_attribute_values_product_id
+idx_attribute_values_attribute_id
 ```
+
+Search/filter-heavy customer queries should generally be served by Search Service rather than complex Catalogue SQL joins.
 
 ---
 
-## 19. Index Naming
+## 20. Index Naming
 
 Use prefixes:
 
@@ -545,16 +659,15 @@ fk_ for foreign keys
 Examples:
 
 ```text
-pk_orders
-uq_orders_order_number
+uq_attribute_definitions_category_code
+idx_attribute_values_product_id
+idx_products_category_status
 uq_orders_idempotency_key
-idx_orders_customer_created_at
-fk_order_items_order_id
 ```
 
 ---
 
-## 20. Uniqueness and Idempotency
+## 21. Uniqueness and Idempotency
 
 Critical operations should use uniqueness constraints where practical.
 
@@ -568,27 +681,27 @@ shipments.idempotency_key
 processed_events.event_id
 ```
 
-Rules:
+Catalogue examples:
 
 ```text
-same idempotency key should not create duplicate business effects
-same event_id should not be processed twice by a consumer
-same key with different request hash should be rejected
+categories.slug
+product_variants.sku
+product_attribute_definitions(category_id, code)
 ```
 
 ---
 
-## 21. Transactions
+## 22. Transactions
 
 Use transactions for multi-step changes within one service schema.
 
 Examples:
 
 ```text
+create product + product variants + product attribute values
 create order + order items + outbox event
-reserve stock + stock reservation items + stock level update
+reserve stock + reservation items + stock level update
 record payment + payment attempt + outbox event
-record notification + notification attempt
 ```
 
 Rules:
@@ -602,67 +715,21 @@ handle deadlocks and conflicts explicitly
 
 ---
 
-## 22. Isolation and Concurrency
-
-Inventory and checkout flows require careful concurrency handling.
-
-Potential techniques:
-
-```text
-row-level locking
-optimistic concurrency
-unique constraints
-idempotency records
-transaction retries for deadlocks
-```
-
-Inventory must prevent overselling.
-
-Example invariant:
-
-```text
-available_quantity >= 0
-reserved_quantity >= 0
-```
-
----
-
 ## 23. Outbox Tables
 
 Services that publish events after database writes should consider an outbox table.
 
-Candidate table:
+Candidate services:
 
 ```text
-outbox_events
+order-service
+payment-service
+inventory-service
+shipping-service
+catalog-service
 ```
 
-Candidate fields:
-
-```text
-outbox_event_id
-event_id
-event_type
-event_version
-aggregate_type
-aggregate_id
-payload
-status
-attempt_count
-next_attempt_at
-created_at
-published_at
-last_error
-```
-
-Rules:
-
-```text
-outbox row should be written in same transaction as business data
-event_id must remain stable across publish retries
-publisher should update status after successful publish
-outbox backlog should be observable
-```
+Catalogue outbox becomes useful when ProductUpdated events drive Search Service projections.
 
 ---
 
@@ -677,18 +744,9 @@ order_status_history
 payment_status_history
 shipment_status_history
 stock_adjustments
+product_price_history
+product_status_history
 notification_attempts
-```
-
-History tables should include:
-
-```text
-previous_status
-new_status
-reason
-changed_at
-changed_by or source where applicable
-correlation_id
 ```
 
 ---
@@ -715,14 +773,6 @@ migration users may have elevated permissions but should be controlled
 read-only users should be separate where needed
 ```
 
-Example:
-
-```sql
-GRANT SELECT, INSERT, UPDATE, DELETE
-ON bfstore_order.*
-TO 'bfstore_order_user'@'%';
-```
-
 ---
 
 ## 26. Local Development Standards
@@ -735,15 +785,6 @@ multiple schemas
 service-specific users
 seed data
 migration scripts
-```
-
-Local setup should create:
-
-```text
-schemas
-users
-permissions
-initial seed data where needed
 ```
 
 Expected scripts:
@@ -777,33 +818,7 @@ docs/data/migrations.md
 
 ---
 
-## 28. Backup and Restore Considerations
-
-Data criticality differs by service.
-
-High criticality:
-
-```text
-orders
-payments
-customers
-inventory
-shipments
-```
-
-Potentially rebuildable:
-
-```text
-search projections
-recommendation projections
-analytics projections
-```
-
-Backup and restore expectations should be documented per service.
-
----
-
-## 29. Security and Privacy
+## 28. Security and Privacy
 
 Do not store:
 
@@ -824,11 +839,11 @@ provider references
 notification recipient details
 ```
 
-Sensitive columns should be identified in data classification documents.
+Catalogue product attributes are generally not sensitive, but supplier-only information, margin data, cost prices, and unpublished product metadata should not be exposed through customer-facing APIs or search projections.
 
 ---
 
-## 30. Testing Standards
+## 29. Testing Standards
 
 Database tests should cover:
 
@@ -840,20 +855,13 @@ transactions commit and roll back correctly
 idempotency uniqueness works
 concurrency rules protect inventory
 soft delete behaviour works where used
-```
-
-Tests should use:
-
-```text
-Docker Compose MySQL
-Testcontainers
-isolated schemas
-transaction rollbacks or database reset
+product attribute definitions constrain attribute values
+filterable catalogue attributes can be projected to Search Service
 ```
 
 ---
 
-## 31. Anti-Patterns to Avoid
+## 30. Anti-Patterns to Avoid
 
 Avoid:
 
@@ -862,7 +870,8 @@ using FLOAT or DOUBLE for money
 cross-service foreign keys
 cross-service joins
 nullable fields without reason
-generic JSON blobs for core data
+one products table with many nullable type-specific columns
+generic JSON blobs for all catalogue data
 shared database user for all services
 migration scripts edited after release
 unindexed high-volume lookup fields
@@ -872,7 +881,7 @@ secrets in seed data
 
 ---
 
-## 32. Initial Implementation Standards
+## 31. Initial Implementation Standards
 
 For the first checkout vertical slice:
 
@@ -887,34 +896,42 @@ add processed_events table for Notification Service
 add outbox_events for Order Service if outbox is implemented
 ```
 
+For Catalogue Service:
+
+```text
+create products
+create categories
+create product_variants
+create product_attribute_definitions
+create product_attribute_values
+seed at least two different product types with different attributes
+```
+
 ---
 
-## 33. Open Questions
+## 32. Open Questions
 
 | Question | Status |
 |---|---|
 | Will standard IDs use ULID, UUIDv7, or UUIDv4? | To decide |
 | Will timestamps use TIMESTAMP(6) or DATETIME(6)? | To decide |
 | Should outbox payload be JSON or protobuf binary? | To decide |
-| Should address snapshots be JSON or structured columns? | To decide |
-| Will local dev users exactly mirror production-style permissions? | Proposed |
-| Should migrations be run by service startup or a separate job? | To decide |
+| Should product attribute options use a table or JSON initially? | To decide |
+| Should variant-specific attributes be supported in version one? | To decide |
+| Should catalogue use generated columns for selected attributes? | Defer |
+| Should Search Service use MySQL projection initially or external search later? | To decide |
 
 ---
 
-## 34. Related Documents
-
-This document should be read alongside:
+## 33. Related Documents
 
 ```text
 docs/data/data-ownership.md
 docs/data/service-database-design.md
 docs/data/migrations.md
-docs/data/pii-handling.md
-docs/data/retention.md
+docs/architecture/domain-model.md
 docs/architecture/service-boundaries.md
-docs/architecture/resilience-patterns.md
-docs/testing/testing-strategy.md
+docs/events/event-catalog.md
 ```
 
 Relevant ADRs:
@@ -926,24 +943,10 @@ adr/0005-use-mysql.md
 
 ---
 
-## 35. Summary
+## 34. Summary
 
 bfstore MySQL usage should be consistent, service-owned, secure, and migration-driven.
 
-The most important standards are:
+Catalogue Service remains on MySQL as the governed source of truth for product data. It supports varied product types using category-scoped attribute definitions and values, while Search Service owns denormalised browse/search projections.
 
-```text
-one schema per service
-one database user per service
-no cross-service joins
-no cross-service foreign keys
-string IDs for contracts
-minor units for money
-UTC timestamps
-clear indexes
-safe constraints
-service-owned migrations
-least privilege permissions
-```
-
-These standards support a professional and maintainable data layer for bfstore’s microservice architecture.
+This gives bfstore product flexibility without losing relational governance, data ownership, and client-reviewable design discipline.
