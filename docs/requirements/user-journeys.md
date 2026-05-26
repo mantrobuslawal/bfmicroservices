@@ -1915,6 +1915,93 @@ Each major journey should have enough observability to diagnose failures.
 
 ---
 
+## 14. Journey-to-Event Matrix
+
+| Journey              | Events Published or Consumed                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Browse catalogue     | Optional: `ProductListViewed`                                                                                 |
+| View product details | Optional: `ProductViewed`                                                                                     |
+| Search products      | Consumes `ProductCreated`, `ProductUpdated`; publishes `SearchIndexUpdated`                                   |
+| Register account     | `CustomerRegistered`, `CustomerProfileCreated`, `NotificationRequested`                                       |
+| Add to basket        | Optional: `BasketItemAdded`                                                                                   |
+| Update basket        | Optional: `BasketItemUpdated`, `BasketItemRemoved`                                                            |
+| Checkout             | `StockReserved`, `PaymentAuthorised`, `ShipmentCreated`, `OrderCreated`, `NotificationRequested`              |
+| Payment failure      | `PaymentFailed`, `OrderFailed`, `StockReservationReleased`                                                    |
+| Insufficient stock   | `StockReservationFailed`                                                                                      |
+| Shipment tracking    | `ShipmentDispatched`, `ShipmentDelivered`, `ShipmentDelayed`                                                  |
+| Submit review        | `ReviewCreated`, `ReviewApproved`, `ReviewRejected`                                                           |
+| Recommendations      | Consumes `ProductViewed`, `BasketItemAdded`, `OrderCreated`, `ReviewCreated`                                  |
+| Cancel order         | `OrderCancelled`, `PaymentRefunded`, `StockReservationReleased`, `ShipmentCancelled`, `NotificationRequested` |
+
+---
+
+## 15. Open Questions
+
+| Question                                                                                           | Status    |
+| -------------------------------------------------------------------------------------------------- | --------- |
+| Will guest checkout be supported in the first version?                                             | To decide |
+| Will checkout require a registered customer initially?                                             | To decide |
+| Should Basket Service store price snapshots or fetch live prices during checkout?                  | To decide |
+| Should Shipping Service failure block order creation or create a pending fulfilment order?         | To decide |
+| Should notifications consume `OrderCreated` directly or a dedicated `NotificationRequested` event? | To decide |
+| Should stock reservation expiry be handled synchronously or by an asynchronous worker?             | To decide |
+| Should payment authorisation and capture be separate flows?                                        | To decide |
+| Should search be backed by MySQL initially or a dedicated search engine later?                     | To decide |
+| How much customer identity is needed for the initial checkout vertical slice?                      | To decide |
+
+---
+
+## 16. Related Documents
+
+This document should be read alongside:
+
+```text
+docs/requirements/product-vision.md
+docs/requirements/scope.md
+docs/requirements/functional-requirements.md
+docs/requirements/non-functional-requirements.md
+docs/requirements/business-rules.md
+docs/requirements/acceptance-criteria.md
+docs/architecture/domain-model.md
+docs/architecture/service-boundaries.md
+docs/architecture/communication-patterns.md
+docs/events/event-catalog.md
+docs/data/data-ownership.md
+docs/testing/e2e-testing.md
+docs/testing/resilience-testing.md
+```
+
+---
+
+## 17. Summary
+
+The most important journey for the initial version of bfstore is the checkout vertical slice:
+```text
+Browse product
+    -> Add to basket
+    -> Checkout
+    -> Reserve stock
+    -> Authorise payment
+    -> Create order
+    -> Create shipment
+    -> Publish event
+    -> Send notification
+```
+
+This journey proves the core backend architecture:
+
+service boundaries
+gRPC communication
+Kafka events
+MySQL service-owned data
+failure handling
+idempotency
+observability
+end-to-end testing
+
+Later journeys such as reviews, search, recommendations, account management, order cancellation, and shipment tracking can be added once the core flow is working.
+
+
 
 
 
