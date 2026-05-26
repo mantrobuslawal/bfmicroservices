@@ -250,6 +250,299 @@ Then the system returns an empty product list without error
 
 ---
 
+### UJ-002: View Product Details
 
+**Goal**
+
+A customer wants to view detailed information about a furniture product.
+
+**Primary Actor**
+
+Customer
+
+**Priority**
+
+Must
+
+**Services Involved**
+
+| Service             | Responsibility                          |
+| ------------------- | --------------------------------------- |
+| `api-gateway`       | Receives request and routes to services |
+| `catalog-service`   | Returns product details                 |
+| `inventory-service` | Returns stock availability              |
+
+
+**Preconditions**
+
+- Product exists.
+- Product is active.
+- Catalogue Service is available.
+
+**Main Success Flow**
+
+1. Customer selects a product.
+2. API Gateway receives product detail request.
+3. API Gateway calls Catalogue Service to get product details.
+4. API Gateway may call Inventory Service to get availability.
+5. API Gateway returns product details and availability to the client.
+
+**Product Details Include**
+
+```text
+product_id
+name
+description
+category
+price
+currency
+material
+colour
+dimensions
+weight
+images
+care_instructions
+availability
+```
+
+**Alternative Flows**
+
+A1: Product Exists But Is Out of Stock
+
+1. Product exists and is active.
+2. Inventory Service returns unavailable or low stock.
+3. API Gateway returns product details with stock availability status.
+
+A2: Product Is Inactive
+
+1. Customer requests an inactive product.
+2. Catalogue Service rejects or hides the product.
+3. API Gateway returns not found or unavailable.
+
+**Failure Flows**
+
+F1: Product Not Found
+
+1. Customer requests an unknown product ID.
+2. Catalogue Service returns not found.
+3. API Gateway returns not found to the client.
+
+
+F2: Inventory Service Unavailable
+
+1. Catalogue details are available.
+2. Inventory Service cannot be reached.
+3. API Gateway may return product details with availability marked as unknown.
+4. Failure is logged and traced.
+
+Events
+
+No Kafka event is required in the initial version.
+
+Later phases may emit:
+```Later phases may emit:```
+
+Observability Requirements
+
+- Trace API Gateway to Catalogue Service.
+- Trace optional Inventory Service call.
+- Record product not found count.
+- Record inventory availability lookup failures.
+
+Acceptance Criteria
+
+```text
+Given an active product exists
+When a customer views the product
+Then the system returns product details
+
+Given a product is out of stock
+When a customer views the product
+Then the system shows the product as unavailable or out of stock
+```
+
+---
+
+### UJ-003: Search and Filter Products
+
+**Goal**
+
+A customer wants to search for furniture and filter results by category, price, material, colour, or dimensions.
+
+**Primary Actor**
+
+Customer
+
+**Priority**
+
+Should
+
+**Initial Version**
+
+No. Later phase.
+
+**Services Involved**
+
+| Service                   | Responsibility                               |
+| ------------------------- | -------------------------------------------- |
+| `api-gateway`             | Receives search request                      |
+| `search-service`          | Executes product search and filtering        |
+| `catalog-service`         | Source of product truth                      |
+| `inventory-service`       | Optional availability data                   |
+| `catalog-service` / Kafka | Publishes product change events for indexing |
+
+Preconditions
+
+- Product catalogue exists.
+- Search index exists or can be generated.
+- Product updates are reflected in search index.
+  
+Main Success Flow
+
+1. Customer enters a search query.
+2. Customer applies optional filters.
+3. API Gateway calls Search Service.
+4. Search Service queries its search index.
+5. Search Service returns matching product summaries.
+6. API Gateway returns search results to the client.
+   
+Example Filters
+
+```text
+category
+price_min
+price_max
+material
+colour
+room
+width_cm
+height_cm
+depth_cm
+availability
+```
+
+Events
+
+Search Service may consume:
+
+```text
+ProductCreated
+ProductUpdated
+ProductDeleted
+InventoryAdjusted
+```
+
+Search Service may publish:
+```SearchIndexUpdated```
+
+**Failure Flows**
+
+F1: Search Index Stale
+
+1. Product was updated in Catalogue Service.
+2. Search index has not yet processed the update.
+3. Search results may temporarily show stale data.
+4. Eventual consistency is accepted and documented.
+   
+F2: Search Service Unavailable
+
+1. API Gateway calls Search Service.
+2. Search Service is unavailable.
+3. API Gateway returns search unavailable response.
+   
+Acceptance Criteria
+```text
+Given products exist in the search index
+When a customer searches by keyword
+Then matching active products are returned
+
+Given a product is inactive
+When a customer searches
+Then the inactive product is not returned
+```
+
+---
+
+### UJ-004: Register Account
+
+**Goal**
+
+A customer wants to create an ACME store account.
+
+**Primary Actor**
+
+Customer
+
+**Priority**
+
+Should
+
+**Initial Version**
+
+Optional for first vertical slice. Can be deferred if using test customers.
+
+Services Involved
+
+| Service                | Responsibility                             |
+| ---------------------- | ------------------------------------------ |
+| `api-gateway`          | Receives registration request              |
+| `auth-service`         | Creates authentication identity            |
+| `customer-service`     | Creates customer profile                   |
+| `notification-service` | Sends welcome or verification notification |
+
+Preconditions
+
+- Customer does not already have an account with the same email address.
+- Auth Service is available.
+- Customer Service is available.
+
+Main Success Flow
+
+1. Customer submits registration details.
+2. API Gateway validates basic request shape.
+3. API Gateway calls Auth Service to create identity.
+4. Auth Service hashes password and creates authentication record.
+5. Auth Service calls or emits event for Customer Service to create profile.
+6. Customer profile is created.
+7. Registration success is returned.
+8. Notification may be sent asynchronously.
+
+Events
+
+Possible events:
+```text
+CustomerRegistered
+CustomerProfileCreated
+NotificationRequested
+```
+
+Failure Flows
+
+F1: Email Already Registered
+
+1. Customer submits an email already in use.
+2. Auth Service rejects the request.
+3. API Gateway returns duplicate account error.
+
+F2: Customer Profile Creation Fails
+
+1. Auth identity is created.
+2. Customer profile creation fails.
+3. System must either compensate, retry, or mark registration incomplete.
+4. Failure is logged and visible to operations.
+
+Acceptance Criteria
+
+```text
+Given a new customer email
+When the customer registers
+Then an authentication identity and customer profile are created
+
+Given an email is already registered
+When the customer attempts to register
+Then the system rejects the registration
+```
+
+---
 
 
