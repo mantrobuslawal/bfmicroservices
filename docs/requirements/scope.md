@@ -1,1176 +1,505 @@
 # Scope
 
-## 1. Document Purpose
+## 1. Purpose
 
-This document defines the scope of **bfstore**, ACME Ltd’s fictional online furniture store backend.
+This document defines the scope of **bfstore**, the backend platform for **Borough Furniture Store**.
 
-It explains:
+It clarifies what is included in the initial implementation, what is deferred, and what is deliberately excluded.
 
-- what is included in the project
-- what is excluded from the project
-- what will be delivered in the first version
-- what may be delivered in later phases
-- what assumptions and constraints shape the scope
-- how scope decisions support the wider platform engineering portfolio
+---
 
-This document should be read alongside:
+## 2. Product Context
+
+Borough Furniture Store is a fictional ecommerce company selling developer-themed furniture and homeware.
+
+The company began with Golang-themed homeware inspired by the Go gopher mascot and later expanded into programming-language mascot-themed and computer-science-inspired products.
+
+Example products:
 
 ```text
-docs/requirements/product-vision.md
-docs/requirements/user-journeys.md
-docs/requirements/functional-requirements.md
-docs/requirements/non-functional-requirements.md
-docs/architecture/service-boundaries.md
-docs/architecture/domain-model.md
+Gopher desk lamp
+Gopher cushion set
+Rob Pike wall tapestry
+Rivest super-secure lockbox
+Dijkstra pathfinding rug
+Grace Hopper debugging blanket
+Turing machine wall clock
+Rust crab coat hooks
+Python plush beanbag
+Kubernetes helm bookends
 ```
 
----
-
-## 2. Product Scope Summary
-
-bfstore is a backend platform for an online furniture store.
-
-The system will support core commerce workflows including product browsing, basket management, checkout, stock reservation, payment authorisation, order creation, shipment creation, notifications, product reviews, search, and recommendations.
-
-The first implementation will focus on a complete checkout vertical slice. Later phases will expand the platform with search, reviews, recommendations, advanced operations, Kubernetes deployment, GitOps, and DevSecOps controls.
+The platform should be realistic enough to support a broader furniture and homeware catalogue over time.
 
 ---
 
-## 3. Scope Statement
+## 3. Scope Strategy
 
-bfstore will provide ACME Ltd with a cloud-native microservice backend for online furniture commerce.
+bfstore is intentionally built in stages.
 
-The project includes:
+The first stage should prove the core architecture through one complete customer journey rather than trying to implement every ecommerce feature.
 
-- application-level microservices
-- gRPC APIs
-- protobuf contracts
-- Kafka event contracts
-- service-owned MySQL databases
-- local development environment
-- application tests
-- application observability
-- application security documentation
-- Kubernetes-ready deployment artefacts
-- production readiness documentation
-
-bfstore will not contain the full ACME cloud platform, landing zone, reusable Terraform modules, zero-trust governance, or developer platform implementation. Those concerns belong to the wider ACME platform estate.
-
-
----
-
-## 4. In Scope
-
-### 4.1 Application Backend
-The following backend capabilities are in scope:
-
-| Capability                       | Description                                                                                   |
-| -------------------------------- | --------------------------------------------------------------------------------------------- |
-| Authentication and authorisation | Customer registration, sign-in, token/session handling, protected operations                  |
-| Customer management              | Customer profile, delivery addresses, preferences                                             |
-| Product catalogue                | Furniture products, categories, descriptions, images, dimensions, materials, colours, pricing |
-| Inventory management             | Stock levels, warehouse availability, stock reservation, reservation expiry                   |
-| Basket management                | Add, update, remove, and view basket items                                                    |
-| Order management                 | Create orders, view orders, update order lifecycle state                                      |
-| Payment processing               | Authorise payments, record payment attempts, handle payment failures and refunds conceptually |
-| Shipping and fulfilment          | Delivery options, shipment creation, fulfilment state, tracking references                    |
-| Notifications                    | Order confirmation, payment status, shipment updates                                          |
-| Reviews                          | Product ratings, review submission, review visibility/moderation status                       |
-| Search                           | Product search, filtering, faceted search, search index update events                         |
-| Recommendations                  | Related products, popular products, basic recommendation rules                                |
-
----
-
-### 4.2 Core Microservices
-
-The target service landscape is in scope.
-
-| Service                  | Scope                                          |
-| ------------------------ | ---------------------------------------------- |
-| `api-gateway`            | Public entry point for frontend clients        |
-| `auth-service`           | Authentication, authorisation, sessions/tokens |
-| `customer-service`       | Customer profiles, addresses, preferences      |
-| `catalog-service`        | Product catalogue and product metadata         |
-| `inventory-service`      | Stock levels and reservations                  |
-| `basket-service`         | Customer basket management                     |
-| `order-service`          | Order creation and order lifecycle             |
-| `payment-service`        | Payment authorisation and payment state        |
-| `shipping-service`       | Shipment creation and fulfilment status        |
-| `notification-service`   | Event-driven customer notifications            |
-| `review-service`         | Product reviews and ratings                    |
-| `search-service`         | Product search and indexing                    |
-| `recommendation-service` | Product recommendations                        |
-
-
-The first implementation may include only a subset of these services, but the overall architecture should allow all target services to be added.
-
----
-
-### 4.3 Communication Model
-
-The following communication patterns are in scope:
-
-| Pattern     | Scope                                                 |
-| ----------- | ----------------------------------------------------- |
-| gRPC        | Internal synchronous service-to-service communication |
-| Kafka       | Asynchronous event-driven workflows                   |
-| Protobuf    | API and event payload contracts                       |
-| API Gateway | Client-facing entry point to backend services         |
-
-The system should clearly separate:
-
-```text commands that require an immediate result```
-
-from:
-
-```text events that describe facts that have already happened```
-
-Examples:
+The first implementation should focus on:
 
 ```text
-CreateOrder           -> gRPC command
-ReserveStock          -> gRPC command
-AuthorisePayment      -> gRPC command
-
-OrderCreated          -> Kafka event
-StockReserved         -> Kafka event
-PaymentAuthorised     -> Kafka event
-ShipmentCreated       -> Kafka event
-NotificationRequested -> Kafka event
+small but complete
+well documented
+testable
+observable
+architecturally representative
 ```
 
 ---
 
-## 4.4 Data and Persistence
+## 4. In Scope for Initial Version
 
-The following data architecture is in scope:
+## 4.1 Product Catalogue
 
-- MySQL as the primary relational database
-- one logical database/schema per service
-- one least-privilege database user per service
-- versioned database migrations
-- seed data for local development
-- service-owned data boundaries
-- no direct cross-service database access
-- documented data ownership
-- basic data classification and PII handling
-- data retention rules
-
-Example database ownership:
+Included:
 
 ```text
-catalog-service          -> bfstore_catalog
-inventory-service        -> bfstore_inventory
-basket-service           -> bfstore_basket
-order-service            -> bfstore_order
-payment-service          -> bfstore_payment
-customer-service         -> bfstore_customer
-shipping-service         -> bfstore_shipping
-notification-service     -> bfstore_notification
-review-service           -> bfstore_review
-search-service           -> bfstore_search
-recommendation-service   -> bfstore_recommendation
+basic product listing
+product detail retrieval
+categories
+product variants
+category-scoped product attributes
+active/inactive product status
+fictional seed products
 ```
 
----
+The catalogue should support different product types without a rigid product table full of nullable fields.
 
-## 4.5 Local Development
-
-The local development environment is in scope.
-
-It should support:
-
-- Docker Compose
-- MySQL
-- Kafka
-- service containers where practical
-- local configuration via ```.env```
-- database bootstrap scripts
-- database migrations
-- local test data
-- protobuf generation
-- Makefile-based developer commands
-
-Expected local commands:
-
-```bash
-</> Bash
-
-make dev-up
-make proto
-make migrate-up
-make test
-make run
-make dev-down
-
-```
-
----
-
-## 4.5 Local Development
-
-The local development environment is in scope.
-
-It should support:
-
-- Docker Compose
-- MySQL
-- Kafka
-- service containers where practical
-- local configuration via .env
-- database bootstrap scripts
-- database migrations
-- local test data
-- protobuf generation
-- Makefile-based developer commands
-
-Expected local commands:
-
-```bash
-</> Bash
-
-make dev-up
-make proto
-make migrate-up
-make test
-make run
-make dev-down
-
-```
-
----
-
-## 4.6 Testing
-
-The following testing areas are in scope:
-
-| Test Type         | Scope                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------- |
-| Unit tests        | Validate service logic and package-level behaviour                                    |
-| Integration tests | Validate services with MySQL, Kafka, and local dependencies                           |
-| Contract tests    | Validate gRPC and Kafka event compatibility                                           |
-| End-to-end tests  | Validate complete business journeys                                                   |
-| Performance tests | Validate latency, throughput, and error rates                                         |
-| Resilience tests  | Validate behaviour under dependency failures, retries, duplicate events, and restarts |
-
-Important flows to test:
+Initial product examples should include multiple categories, such as:
 
 ```text
-browse product
-add to basket
-checkout
+wall tapestries
+lockboxes
+desk lamps
+rugs
+cushions
+bookends
+```
+
+## 4.2 Basket
+
+Included:
+
+```text
+create basket
+add item to basket
+update item quantity
+remove item
+get basket
+mark basket as checked out
+```
+
+## 4.3 Inventory
+
+Included:
+
+```text
+basic stock level storage
+check availability
 reserve stock
-authorise payment
-create order
-create shipment
-publish event
-send notification
-
+release reservation on failure
+prevent obvious overselling
 ```
 
----
+## 4.4 Order and Checkout
 
-## 4.7 Observability
-
-Application-level observability is in scope.
-
-Each service should eventually provide:
-
-- structured logs
-- correlation IDs
-- request IDs
-- metrics
-- distributed traces
-- health checks
-- readiness checks
-- liveness checks
-- request latency metrics
-- error counts
-- Kafka consumer lag metrics where relevant
-- service dashboards
-- service alerts
-
----
-
-## 4.8 Security
-
-Application-level security is in scope.
-
-This includes:
-
-- customer authentication
-- authorisation for protected actions
-- service-to-service security design
-- least privilege database access
-- secure configuration handling
-- no secrets committed to source control
-- PII-aware logging
-- audit events for sensitive operations
-- dependency scanning
-- container scanning
-- SBOM generation
-- image signing
-- application threat modelling
-
-Wider platform security standards are documented in ```bfstore-security-governance```.
-
----
-
-## 4.10 Operations Documentation
-
-Application operations documentation is in scope.
-
-This includes:
-
-- runbooks
-- deployment strategy
-- release strategy
-- rollback strategy
-- database migration strategy
-- incident response guidance
-- backup and restore notes
-- disaster recovery considerations
-- cost-control considerations
-- production readiness checklist
-
----
-
-## 5. Out of Scope
-
-The following are out of scope for the bfstore application repo.
-
-### 5.1 Full Frontend Application
-
-A production-quality frontend is out of scope.
-
-The API Gateway may expose endpoints suitable for frontend clients, but a full customer-facing web application is not required.
-
-Possible later options:
-
-- minimal frontend for demos
-- API client collection
-- simple admin UI
-- simple test harness
-
----
-
-### 5.2 Real Payment Provider Integration
-
-Real payment provider integration is out of scope for the initial implementation.
-
-The ```payment-service``` may simulate payment authorisation, capture, failure, and refund flows.
-
-Out of scope initially:
-
-- Stripe live integration
-- PayPal live integration
-- card storage
-- PCI DSS implementation
-- fraud detection
-- chargeback management
-
----
-
-### 5.3 Real Email or SMS Provider Integration
-
-Real notification provider integration is out of scope initially.
-
-The ```notification-service``` may log, simulate, or write notifications to a local store.
-
-Out of scope initially:
-
-- real email sending
-- real SMS sending
-- provider webhooks
-- marketing campaigns
-- notification preference centre
-
----
-
-### 5.4 Real Warehouse or Carrier Integration
-
-Real fulfilment provider integration is out of scope initially.
-
-The ```shipping-service``` may simulate shipment creation and tracking.
-
-Out of scope initially:
-
-- real warehouse management system integration
-- real carrier APIs
-- label printing
-- route optimisation
-- returns logistics
-
----
-
-###  5.5 Advanced Commerce Features
-
-The following are out of scope for the initial implementation:
-
-- promotions
-- vouchers
-- loyalty points
-- complex tax calculation
-- multi-currency pricing
-- internationalisation
-- subscriptions
-- bundles
-- wishlists
-- gift cards
-- marketplaces
-- seller onboarding
-
-Some of these may be added later.
-
----
-
-### 5.6 Advanced Search and Recommendation Engines
-
-Basic search and recommendations are in scope.
-
-Advanced implementations are out of scope initially.
-
-Out of scope initially:
-
-- Elasticsearch/OpenSearch production cluster
-- vector search
-- machine learning recommendation models
-- real-time personalisation
-- A/B testing platform
-- behavioural data lake
-
-The first implementation may use simple rules, local indexes, or event-fed projections.
-
----
-
-### 5.7 Full Production Cloud Infrastructure
-
-The bfstore repo does not own full production infrastructure.
-
-Out of scope for this repo:
-
-- cloud landing zone
-- account/subscription/project structure
-- VPC implementation
-- Kubernetes cluster provisioning
-- Kafka platform provisioning
-- managed MySQL provisioning
-- observability platform provisioning
-- CI/CD runner infrastructure
-- DNS and certificate platform
-- cloud firewall and egress inspection
-
-These belong in:
-```bfstore-platform-infra```
-
----
-
-### 5.8 Reusable Infrastructure Modules
-
-Reusable Terraform/OpenTofu modules are out of scope for this repo.
-
-They belong in:
-```bfstore-terraform-modules```
-
----
-
-### 5.9 GitOps Environment State
-
-The bfstore repo may contain application deployment manifests, charts, and examples.
-
-The desired live environment state belongs in:
-```bfstore-platform-gitops```
-
-This includes:
-
-- environment-specific Argo CD applications
-- cluster overlays
-- production image versions
-- platform add-ons
-- environment policies
-
----
-
-### 5.10 Platform Security Governance
-
-Application security documentation is in scope.
-
-ACME-wide security governance is out of scope for this repo and belongs in:
-```bfstore-security-governance```
-
-Examples:
-
-- zero-trust strategy
-- organisation-wide identity model
-- secrets governance
-- policy-as-code standards
-- supply-chain standards
-- SLSA target state
-- security exceptions process
-- threat model templates
-- production security standards
-
----
-
-### 5.11 Developer Platform Implementation
-
-Backstage and the internal developer platform are out of scope for this repo.
-
-They belong in:
-```bfstore-developer-platform```
-
-This includes:
-
-- Backstage app configuration
-- service catalogue
-- TechDocs configuration
-- golden path templates
-- scorecards
-- platform onboarding docs
-- service creation templates
-
----
-
-## 6. Initial Version Scope
-
-The first version should focus on proving the main architecture with a working checkout vertical slice.
-
-### 6.1 Initial Services
-
-The first implementation should include:
-
-- api-gateway
-- catalog-service
-- inventory-service
-- basket-service
-- order-service
-- payment-service
-- shipping-service
-- notification-service
-
-### 6.2 Initial Business Flow
-
-The first version should support:
+Included:
 
 ```text
-Browse product
-    -> Add to basket
-    -> Checkout
-    -> Reserve stock
-    -> Authorise payment
-    -> Create order
-    -> Create shipment
-    -> Publish OrderCreated event
-    -> Send notification
+create order from basket
+coordinate checkout flow
+store order item snapshots
+store selected product attribute summaries where useful
+publish OrderCreated event
+return order result
 ```
 
-### 6.3 Initial Technical Capabilities
+The first checkout orchestration is owned by Order Service.
 
-The first version should include:
+## 4.5 Payment
 
-- protobuf contracts for the initial services
-- gRPC APIs for the initial services
-- Kafka event definitions for checkout-related events
-- MySQL schemas for the initial services
-- Docker Compose local environment
-- service-level unit tests
-- integration tests for key services
-- basic end-to-end checkout test
-- structured logs with correlation IDs
-- health and readiness endpoints
-- basic deployment manifests
+Included:
 
-### 6.4 Initial Documentation
+```text
+simulated payment authorisation
+successful payment path
+declined payment path
+payment attempt recording
+idempotency support
+```
 
-The first version should include:
+Real payment provider integration is out of scope for the first version.
+
+## 4.6 Shipping
+
+Included:
+
+```text
+static delivery options
+simulated shipment creation
+shipment status
+shipment record
+```
+
+Real carrier integration is out of scope for the first version.
+
+## 4.7 Notification
+
+Included:
+
+```text
+consume OrderCreated
+create notification record
+simulate order confirmation
+record notification attempt
+avoid duplicate notifications for duplicate events
+```
+
+## 4.8 Events
+
+Included:
+
+```text
+OrderCreated
+PaymentAuthorised
+PaymentFailed
+StockReserved
+StockReservationFailed
+ShipmentCreated
+ShipmentFailed
+NotificationSent
+NotificationFailed
+```
+
+Catalogue events may be documented and partially implemented later.
+
+## 4.9 Database
+
+Included:
+
+```text
+service-owned MySQL schemas
+migration directories
+local database initialisation
+catalogue flexible attribute tables
+order snapshots
+payment attempts
+stock reservations
+notification processed events
+```
+
+## 4.10 Documentation
+
+Included:
+
+```text
+requirements
+architecture
+ADRs
+API design
+event design
+data ownership
+testing strategy
+database design
+service README files
+```
+
+---
+
+## 5. Deferred Scope
+
+## 5.1 Authentication and Customer Accounts
+
+Deferred:
+
+```text
+full login and registration
+password reset
+customer profile management
+saved customer addresses
+role-based admin access
+```
+
+These can be added once the checkout vertical slice works.
+
+## 5.2 Search Service
+
+Deferred or light initial version:
+
+```text
+full-text search
+faceted filtering
+ranking
+search index rebuilds
+query analytics
+```
+
+Search Service should eventually consume catalogue events and build denormalised product documents.
+
+## 5.3 Recommendation Service
+
+Deferred:
+
+```text
+related products
+personalised recommendations
+event-derived recommendation signals
+recommendation feedback
+```
+
+## 5.4 Review Service
+
+Deferred:
+
+```text
+customer reviews
+ratings
+moderation
+review reporting
+rating summaries
+```
+
+## 5.5 Advanced Catalogue Management
+
+Deferred:
+
+```text
+admin product creation UI
+bulk imports
+supplier feeds
+product approval workflow
+complex pricing
+promotions
+discounts
+tax rules
+```
+
+## 5.6 Real External Providers
+
+Deferred:
+
+```text
+real payment provider
+real shipping provider
+email/SMS provider
+fraud provider
+tax provider
+```
+
+Simulated providers are sufficient for the first implementation.
+
+## 5.7 Advanced Platform Capabilities
+
+Deferred:
+
+```text
+multi-region deployment
+service mesh
+canary releases
+advanced chaos engineering
+full FinOps automation
+advanced policy-as-code
+production-grade secrets rotation
+```
+
+---
+
+## 6. Explicitly Out of Scope
+
+The project will not initially include:
+
+```text
+real customer payment data
+real customer addresses
+production secrets
+real supplier integrations
+marketplace seller onboarding
+returns and exchanges
+warehouse management system
+ERP integration
+mobile app
+frontend ecommerce site
+```
+
+A lightweight frontend may be added later, but the first priority is backend and platform evidence.
+
+---
+
+## 7. First Vertical Slice
+
+The first end-to-end slice is:
+
+```text
+1. Customer lists products.
+2. Customer views a product.
+3. Customer adds product to basket.
+4. Customer checks out.
+5. Order Service retrieves basket.
+6. Inventory Service reserves stock.
+7. Payment Service authorises payment.
+8. Shipping Service creates shipment.
+9. Order Service creates order.
+10. Order Service publishes OrderCreated.
+11. Notification Service consumes OrderCreated.
+12. Notification Service records simulated confirmation.
+```
+
+This slice proves the major architectural decisions.
+
+---
+
+## 8. Product Data Scope
+
+The initial product catalogue should include varied product types to prove the flexible catalogue model.
+
+Required initial product categories:
+
+```text
+wall art
+desk accessories
+soft furnishings
+storage
+lighting
+rugs
+```
+
+Required attribute examples:
+
+```text
+dimensions
+material
+colour
+theme
+mascot
+programming_language
+security_rating
+bulb_type
+fabric_type
+mounting_style
+```
+
+This ensures the catalogue model is tested against realistic variation.
+
+---
+
+## 9. Technical Scope
+
+Initial technical artefacts should include:
+
+```text
+buf.yaml
+buf.gen.yaml
+gRPC proto contracts
+service skeletons
+database migrations
+Docker Compose
+Makefile
+Kafka topics
+basic structured logging
+basic OpenTelemetry wiring
+health checks
+contract tests
+integration tests
+```
+
+---
+
+## 10. Scope Boundaries by Service
+
+| Service | Initial Scope |
+|---|---|
+| `catalog-service` | List/get products, categories, attributes |
+| `basket-service` | Manage basket |
+| `inventory-service` | Check/reserve/release stock |
+| `order-service` | Checkout orchestration and order creation |
+| `payment-service` | Simulated payment authorisation |
+| `shipping-service` | Simulated shipment creation |
+| `notification-service` | Consume order events and simulate confirmation |
+| `api-gateway` | Optional initial routing layer |
+| `search-service` | Deferred |
+| `recommendation-service` | Deferred |
+| `review-service` | Deferred |
+| `auth-service` | Deferred |
+| `customer-service` | Deferred |
+
+---
+
+## 11. Non-Functional Scope
+
+Initial non-functional scope includes:
+
+```text
+clear local development workflow
+repeatable migrations
+structured logs
+correlation IDs
+basic tracing
+health endpoints
+idempotency for checkout-critical operations
+test coverage for key flows
+safe error handling
+no raw payment data
+```
+
+---
+
+## 12. Success Criteria
+
+The initial scope is complete when:
+
+```text
+a developer can run the system locally
+seed data creates Borough Furniture Store products
+Catalogue Service returns products with varied attributes
+Basket Service manages basket items
+Order Service performs checkout orchestration
+Inventory Service reserves stock
+Payment Service simulates authorisation
+Shipping Service simulates shipment creation
+OrderCreated is published
+Notification Service consumes OrderCreated
+tests prove the main flow
+documentation matches implementation
+```
+
+---
+
+## 13. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Scope becomes too large | Focus on first vertical slice |
+| Product model becomes overcomplicated | Start with a small set of attribute types |
+| Catalogue attributes become ungoverned | Use category-scoped definitions |
+| Search is implemented too early | Defer until catalogue events are stable |
+| Too many services before working flow | Skeleton only what the vertical slice needs |
+| Documentation drifts from code | Update docs after implementation lessons |
+
+---
+
+## 14. Related Documents
 
 ```text
 docs/requirements/product-vision.md
-docs/requirements/scope.md
-docs/requirements/user-journeys.md
 docs/requirements/functional-requirements.md
 docs/requirements/non-functional-requirements.md
+docs/requirements/business-rules.md
+docs/requirements/acceptance-criteria.md
 docs/architecture/domain-model.md
 docs/architecture/service-boundaries.md
-docs/architecture/communication-patterns.md
-docs/api/grpc-overview.md
-docs/events/event-catalog.md
-docs/data/data-ownership.md
-docs/testing/testing-strategy.md
+docs/data/service-database-design.md
 ```
 
 ---
 
-## 7. Later Phase Scope
+## 15. Summary
 
-Later phases may add the following.
+The initial bfstore scope is intentionally focused.
 
-### 7.1 Extended Business Capabilities
+The project should first prove a complete checkout journey for Borough Furniture Store using a small but varied developer-themed product catalogue.
 
-- customer profile management
-- review service
-- search service
-- recommendation service
-- order cancellation
-- refunds
-- shipment tracking updates
-- product availability notifications
-- admin workflows
-- product moderation
-- review moderation
-
-### 7.2 Advanced Testing
-
-- performance testing
-- soak testing
-- spike testing
-- chaos testing
-- fault injection
-- duplicate event testing
-- consumer lag testing
-- database failover testing
-
-### 7.3 Platform Integration
-
-- Kubernetes deployment
-- Helm or Kustomize
-- Argo CD GitOps deployment
-- environment promotion
-- image version promotion
-- deployment rollback
-- blue/green or canary strategy
-
-### 7.4 DevSecOps Controls
-
-- dependency scanning
-- SAST
-- container scanning
-- SBOM generation
-- image signing
-- provenance
-- policy-as-code
-- admission policy examples
-- secrets integration
-- vulnerability reporting
-
-### 7.5 Operational Maturity
-
-- service dashboards
-- alerts
-- SLOs
-- runbooks
-- backup and restore tests
-- disaster recovery plans
-- production readiness scorecards
-- incident response simulations
-- FinOps documentation
-
----
-
-## 8. Scope by Repository
-
-The ACME platform estate is split across several repositories.
-
-| Repository                 | In Scope                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `bfstore-microservices`                  | Application backend, services, protobuf, events, MySQL schemas, app tests, app docs, app deployment artefacts |
-| `bfstore-platform-infra`      | Cloud environments, networking, Kubernetes, Kafka, MySQL platform, observability, CI/CD runners, DR, FinOps   |
-| `bfstore-platform-gitops`     | Desired Kubernetes state for apps, platform add-ons, policies, and environment promotion                      |
-| `bfstore-terraform-modules`   | Reusable infrastructure modules, module tests, examples, release process                                      |
-| `bfstore-security-governance` | Zero trust, identity, secrets, policy-as-code, threat models, supply-chain standards                          |
-| `bfstore-developer-platform`  | Backstage, golden paths, scorecards, service templates, onboarding                                            |
-
-
-This repository split is intentional. It keeps bfstore focused on the application while allowing the wider ACME estate to demonstrate senior platform engineering concerns.
-
----
-
-## 9. Scope by Service
-
-### 9.1 API Gateway
-
-In scope:
-
-- client-facing entry point
-- request routing to backend services
-- authentication enforcement
-- request correlation IDs
-- response mapping
-- basic rate limiting design
-- error response standardisation
-
-Out of scope initially:
-
-- full API monetisation
-- external developer portal
-- complex API product management
-
----
-
-### 9.2 Auth Service
-
-In scope:
-
-- customer registration
-- customer login
-- token issuing
-- token validation
-- password hashing
-- basic role/permission model
-
-Out of scope initially:
-
-- social login
-- enterprise SSO
-- MFA
-- passkeys
-- account recovery workflows
-- fraud detection
-
----
-
-### 9.3 Customer Service
-
-In scope:
-
-- customer profile
-- delivery addresses
-- customer preferences
-
-Out of scope initially:
-
-- marketing preferences centre
-- GDPR subject access automation
-- loyalty account management
-
----
-
-### 9.4 Catalogue Service
-
-In scope:
-
-- products
-- categories
-- furniture dimensions
-- materials
-- colours
-- product images metadata
-- product pricing
-- active/inactive product status
-
-Out of scope initially:
-
-- full PIM integration
-- supplier catalogue import
-- complex pricing engine
-
----
-
-### 9.5 Inventory Service
-
-In scope:
-
-- stock levels
-- stock reservations
-- reservation expiry
-- stock adjustment events
-- warehouse availability model
-
-Out of scope initially:
-
-- real-time warehouse integration
-- purchase ordering
-- stock forecasting
-
----
-
-### 9.6 Basket Service
-
-In scope:
-
-- create basket
-- add item
-- update quantity
-- remove item
-- view basket
-- clear basket after checkout
-
-Out of scope initially:
-
-- guest basket merge
-- wishlist conversion
-- saved baskets
-
----
-
-### 9.7 Order Service
-
-In scope:
-
-- create order
-- validate checkout
-- coordinate stock reservation and payment authorisation
-- maintain order lifecycle state
-- publish order events
-- view order details
-- list customer orders
-
-Out of scope initially:
-
-- complex returns
-- exchanges
-- manual order amendments
-- split shipments
-
----
-
-### 9.8 Payment Service
-
-In scope:
-
-- simulate payment authorisation
-- record payment attempts
-- handle payment success/failure
-- publish payment events
-- conceptual refund support
-
-Out of scope initially:
-
-- live payment provider
-- card vaulting
-- PCI DSS scope
-- 3D Secure
-- chargebacks
-
----
-
-### 9.9 Shipping Service
-
-In scope:
-
-- delivery option selection
-- shipment creation
-- shipment status
-- tracking reference
-- shipment events
-
-Out of scope initially:
-
-- live carrier integration
-- label generation
-- route optimisation
-- returns logistics
-
----
-
-### 9.10 Notification Service
-
-In scope:
-
-- consume notification-related events
-- send simulated email/SMS notifications
-- record notification status
-- retry failed notifications conceptually
-
-Out of scope initially:
-
-- real provider integration
-- marketing campaigns
-- preference centre
-
----
-
-### 9.11 Review Service
-
-In scope:
-
-- submit review
-- view product reviews
-- rating summary
-- review moderation status
-
-Out of scope initially:
-
-- fraud detection
-- media uploads
-- sentiment analysis
-- abuse detection
-
----
-
-### 9.12 Search Service
-
-In scope:
-
-- product search
-- filtering
-- faceted search
-- search index update events
-
-Out of scope initially:
-
-- production OpenSearch cluster
-- vector search
-- semantic search
-- personalised ranking
-
----
-
-### 9.13 Recommendation Service
-
-In scope:
-
-- related products
-- popular products
-- basic rules-based recommendations
-- recommendation events
-
-Out of scope initially:
-
-- machine learning model training
-- feature store
-- real-time personalisation
--  A/B testing
-
----
-
-## 10. Non-Functional Scope
-
-The following quality attributes are in scope.
-
-| Category        | Scope                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
-| Performance     | Define latency, throughput, and error-rate targets for key flows                    |
-| Reliability     | Design for retries, idempotency, and graceful degradation                           |
-| Availability    | Provide health/readiness checks and deployment readiness                            |
-| Scalability     | Design services so they can scale independently                                     |
-| Security        | Apply authentication, authorisation, least privilege, and secure delivery practices |
-| Observability   | Provide logs, metrics, traces, dashboards, and alerts                               |
-| Maintainability | Use clear service boundaries, docs, tests, and ADRs                                 |
-| Operability     | Provide runbooks, deployment docs, and rollback strategy                            |
-| Resilience      | Test behaviour under common dependency failures                                     |
-| Cost awareness  | Include local and cloud cost-control considerations                                 |
-
-
----
-
-## 11. Scope Control Principles
-
-Scope decisions should follow these principles:
-
-### 11.1 Build a Working Vertical Slice First
-
-Prefer one complete business flow over many incomplete services.
-
-The first major target is:
-
-```browse -> basket -> checkout -> stock -> payment -> order -> shipment -> notification```
-
-### 11.2 Avoid Premature Platform Complexity
-
-Do not block application progress by implementing every platform capability first.
-
-Build enough platform support to run and test the app, then mature the platform iteratively.
-
-### 11.3 Keep Service Boundaries Clear
-
-Avoid adding “shared” services that become distributed utility layers.
-
-Each service should own a business capability.
-
-### 11.4 Prefer Mocked External Integrations Initially
-
-Mock payments, notifications, shipping, and external systems first.
-
-Real integrations can be added later if they strengthen the portfolio.
-
-### 11.5 Document Deferred Work
-
-If a feature is intentionally deferred, record it rather than silently ignoring it.
-
----
-
-## 12. Assumptions
-
-This scope assumes:
-
-- ACME Ltd is fictional
-- bfstore is primarily a backend/platform portfolio project
-- Go will be used for backend services
-- MySQL will be used for relational persistence
-- Kafka will be used for asynchronous messaging
-- gRPC and protobuf will be used for internal service contracts
-- Docker Compose will support local development
-- Kubernetes will be the target deployment platform
-- cloud infrastructure will be handled in a separate repo
-- external third-party services may be mocked initially
-- the first version should prioritise a working checkout flow
-
----
-
-## 13. Constraints
-
-The project is constrained by:
-
-- solo developer effort
-- need to keep local development affordable
-- desire to use mostly open-source tooling
-- portfolio value for Senior Platform Engineer, DevSecOps Engineer, and Kubernetes Platform Engineer roles
-- need to keep first delivery achievable
-- need to avoid unnecessary enterprise complexity before the core system works
-
----
-
-## 14. Dependencies
-
-bfstore depends on:
-
-| Dependency     | Purpose                                                          |
-| -------------- | ---------------------------------------------------------------- |
-| Go             | Primary service implementation language                          |
-| MySQL          | Service-owned relational databases                               |
-| Kafka          | Asynchronous event messaging                                     |
-| Protobuf       | API and event contract definition                                |
-| gRPC           | Internal service communication                                   |
-| Docker Compose | Local development environment                                    |
-| Kubernetes     | Target runtime platform                                          |
-| Buf            | Protobuf linting, breaking change detection, and code generation |
-| OpenTelemetry  | Distributed tracing and telemetry instrumentation                |
-
-Wider platform dependencies may include:
-
-| Dependency                    | Purpose                |
-| ----------------------------- | ---------------------- |
-| Argo CD                       | GitOps deployment      |
-| Terraform/OpenTofu            | Infrastructure as code |
-| Backstage                     | Developer portal       |
-| Kyverno/OPA                   | Policy-as-code         |
-| Cosign                        | Image signing          |
-| Syft/Trivy/Grype              | SBOM and scanning      |
-| Prometheus/Grafana/Loki/Tempo | Observability          |
-
----
-
-## 15. Deliverables
-
-### 15.1 Application Deliverables
-
-- service source code
-- protobuf contracts
-- Kafka event definitions
-- MySQL migrations
-- Dockerfiles
-- Docker Compose setup
-- Kubernetes manifests/charts
-- tests
-- documentation
-- ADRs
-  
-### 15.2 Documentation Deliverables
-
-- requirements documentation
-- architecture documentation
-- API documentation
-- event documentation
-- data ownership documentation
-- testing strategy
-- security documentation
-- observability documentation
-- operations documentation
-- runbooks
-- production readiness checklist
-
-### 15.3 Platform-Related Deliverables
-
-Within this repo:
-
-- app deployment artefacts
-- service security notes
-- application supply-chain pipeline notes
-- Kubernetes workload requirements
-
-Outside this repo:
-
-- cloud infra
-- GitOps state
-- reusable modules
-- platform security governance
-- developer platform
-
----
-
-## 16. Acceptance of Scope
-
-The scope for the initial version is considered satisfied when:
-
-- the initial vertical slice is documented
-- protobuf contracts exist for the initial services
-- the initial services can run locally
-- the services use separate MySQL databases/schemas
-- checkout flow can be executed end to end
-- relevant Kafka events are published and consumed
-- core tests pass
-- basic observability exists
-- core docs are present and accurate
-- deferred items are clearly documented
-
----
-
-## 17. Scope Risks
-
-| Risk                            | Description                                                  | Mitigation                                      |
-| ------------------------------- | ------------------------------------------------------------ | ----------------------------------------------- |
-| Scope creep                     | Too many features may be attempted too early                 | Build the checkout vertical slice first         |
-| Too many services               | Service count may slow development                           | Implement target services in phases             |
-| Platform overload               | Kubernetes, GitOps, and security work may delay app delivery | Build local app first, then platform maturity   |
-| Over-documentation              | Documentation may delay implementation                       | Write enough to guide work, then iterate        |
-| Under-documentation             | Missing docs may weaken portfolio value                      | Keep docs updated as part of each change        |
-| External integration complexity | Real providers may distract from architecture                | Use mocks or simulators initially               |
-| Local environment becomes heavy | Too many services may make local dev slow                    | Use Compose profiles and phased service startup |
-
----
-
-## 18. Change Control
-
-Scope changes should be recorded when they affect:
-
-- service boundaries
-- core workflows
-- data ownership
-- API contracts
-- event contracts
-- deployment model
-- security model
-- testing strategy
-- operational responsibilities
-
-Larger decisions should be documented using ADRs in:
-```adr/```
-
-Examples:
-
-```text
-adr/0001-use-microservices.md
-adr/0002-use-grpc-for-service-communication.md
-adr/0003-use-kafka-for-events.md
-adr/0004-use-service-owned-databases.md
-adr/0005-use-mysql.md
-```
-
----
-
-## 19. Summary
-
-bfstore is scoped as a realistic cloud-native backend for ACME Ltd’s online furniture store.
-
-The first priority is a working checkout vertical slice. The broader target is a well-documented, observable, secure, testable, Kubernetes-ready microservice system that fits into a wider ACME platform engineering estate.
-
-The scope is intentionally ambitious, but it should be delivered in phases to avoid unnecessary complexity before the core product flow works.
-
-
-
-
-
-
-
-
+The scope includes flexible catalogue attributes, service-owned MySQL schemas, gRPC APIs, Kafka events, and enough operational/testing evidence to demonstrate senior engineering judgement.
