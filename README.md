@@ -1,6 +1,6 @@
 # bfstore — Borough Furniture Store
 
-![bfstore - Borough Furniture Store logo](docs/assets/bfstore-logo.png)
+![bfstore - Borough Furniture Store logo](docs/assets/bfstore_logo.png)
 
 ## 1. Overview
 
