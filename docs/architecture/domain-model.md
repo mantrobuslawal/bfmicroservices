@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document defines the high-level domain model for **bfstore**, ACME Ltd’s fictional online furniture store backend.
+This document defines the high-level domain model for **bfstore**, the backend platform for **Borough Furniture Store**.
 
 It describes the core business concepts, their relationships, and which service owns each concept.
 
@@ -10,9 +10,32 @@ This document is intended for engineers, reviewers, technical leads, and clients
 
 ---
 
-## 2. Domain Overview
+## 2. Business Context
 
-bfstore supports an online furniture and homeware shopping journey.
+Borough Furniture Store began as a niche shop selling Golang-themed homeware to Go enthusiasts.
+
+The name **Borough** is inspired by the home of the Go gopher mascot.
+
+The business later expanded into programming-language mascot-themed and computer-science-inspired homeware, including products such as:
+
+```text
+Gopher desk lamps
+Gopher cushions
+Rob Pike wall tapestries
+Rivest super-secure lockboxes
+Dijkstra pathfinding rugs
+Grace Hopper debugging blankets
+Turing machine wall clocks
+Rust crab coat hooks
+Python plush beanbags
+Kubernetes helm bookends
+```
+
+This product story gives bfstore a memorable identity while still supporting realistic ecommerce domain modelling.
+
+---
+
+## 3. Domain Overview
 
 Core domains:
 
@@ -46,7 +69,7 @@ Browse product
 
 ---
 
-## 3. Key Modelling Principle
+## 4. Key Modelling Principle
 
 The domain model separates:
 
@@ -68,29 +91,30 @@ Inventory Service stores product IDs as references while owning stock.
 
 ---
 
-## 4. Catalogue Domain
+## 5. Catalogue Domain
 
-## 4.1 Purpose
+## 5.1 Purpose
 
 The Catalogue domain owns governed product information.
 
 It must support varied future product types such as:
 
 ```text
+wall tapestries
+lockboxes
+desk lamps
+rugs
+cushions
+bookends
 curtains
 bed frames
 mattresses
 sofas
-rugs
-lamps
-tables
 wardrobes
-mirrors
-cushions
 homeware
 ```
 
-## 4.2 Core Concepts
+## 5.2 Core Concepts
 
 ```text
 Product
@@ -103,9 +127,7 @@ ProductImage
 ProductPriceHistory
 ```
 
-## 4.3 Concept Definitions
-
-### Product
+## 5.3 Product
 
 A sellable catalogue item.
 
@@ -127,35 +149,39 @@ A Product contains only common fields shared across product types.
 
 Product-type-specific details belong in attributes.
 
-### Category
+## 5.4 Category
 
 A taxonomy node used to organise products and define relevant attributes.
 
-Examples:
+Example categories:
 
 ```text
+wall-art
+secure-storage
+lighting
+soft-furnishings
+rugs
+desk-accessories
+bookends
 curtains
 bed-frames
-rugs
-lamps
-sofas
 ```
 
-Categories may form a hierarchy.
-
-### ProductVariant
+## 5.5 ProductVariant
 
 A purchasable variation of a product.
 
 Examples:
 
 ```text
-same curtain in different widths and drops
+same wall tapestry in different sizes
+same desk lamp in different colours
+same cushion set in different fabrics
+same curtains in different widths and drops
 same bed frame in different sizes
-same sofa in different fabrics
 ```
 
-### ProductAttributeDefinition
+## 5.6 ProductAttributeDefinition
 
 A category-scoped definition of a product attribute.
 
@@ -163,12 +189,15 @@ Examples:
 
 | Category | Attribute |
 |---|---|
-| curtains | drop_cm |
-| curtains | heading_type |
-| bed-frames | bed_size |
-| bed-frames | storage_type |
-| rugs | shape |
-| lamps | bulb_type |
+| wall-art | `width_cm` |
+| wall-art | `height_cm` |
+| secure-storage | `security_rating` |
+| secure-storage | `lock_type` |
+| lighting | `bulb_type` |
+| rugs | `shape` |
+| soft-furnishings | `fabric_type` |
+| curtains | `drop_cm` |
+| bed-frames | `bed_size` |
 
 Definitions describe:
 
@@ -182,22 +211,25 @@ filterable flag
 allowed values
 ```
 
-### ProductAttributeValue
+## 5.7 ProductAttributeValue
 
 A product-specific or variant-specific value for a defined attribute.
 
 Examples:
 
 ```text
-drop_cm = 228
-heading_type = eyelet
-bed_size = king
-storage_type = ottoman
-rug_shape = round
+width_cm = 120
+height_cm = 80
+security_rating = super_secure
+lock_type = rivest
 bulb_type = E27
+rug_shape = pathfinding_grid
+fabric_type = debugging_fleece
+drop_cm = 228
+bed_size = king
 ```
 
-### ProductAttributeOption
+## 5.8 ProductAttributeOption
 
 A controlled allowed value for an attribute.
 
@@ -205,11 +237,12 @@ Examples:
 
 ```text
 bed_size: single, double, king, super king
+lock_type: combination, key, rivest
+theme: golang, cryptography, algorithms, kubernetes, python, rust
 heading_type: eyelet, pencil pleat, tab top
-storage_type: none, drawer, ottoman
 ```
 
-## 4.4 Catalogue Ownership
+## 5.9 Catalogue Ownership
 
 Catalogue Service owns:
 
@@ -239,9 +272,7 @@ recommendation outputs
 
 ---
 
-## 5. Search Projection Domain
-
-## 5.1 Purpose
+## 6. Search Projection Domain
 
 Search Service owns denormalised product search documents and facets.
 
@@ -256,8 +287,6 @@ sorting
 projection rebuilds
 ```
 
-## 5.2 Relationship to Catalogue
-
 Catalogue is the source of truth.
 
 Search is a projection.
@@ -271,26 +300,24 @@ Search Service consumes event
 Search Service updates denormalised product search document
 ```
 
-## 5.3 Example Search Document
+Example search document:
 
 ```json
 {
-  "product_id": "prd_123",
-  "title": "Blackout Eyelet Curtains",
-  "category": "curtains",
-  "price_minor": 8999,
+  "product_id": "prd_rob_pike_tapestry",
+  "title": "Rob Pike Wall Tapestry",
+  "category": "wall-art",
+  "price_minor": 4999,
   "currency_code": "GBP",
   "attributes": {
-    "colour": "navy",
-    "drop_cm": 228,
-    "width_cm": 167,
-    "lining": "blackout",
-    "heading_type": "eyelet"
+    "theme": "golang",
+    "width_cm": 120,
+    "height_cm": 80,
+    "fabric_type": "woven"
   },
   "filterable": {
-    "colour": ["navy"],
-    "lining": ["blackout"],
-    "heading_type": ["eyelet"]
+    "theme": ["golang"],
+    "fabric_type": ["woven"]
   }
 }
 ```
@@ -299,7 +326,7 @@ Search Service must not become the hidden product source of truth.
 
 ---
 
-## 6. Basket Domain
+## 7. Basket Domain
 
 Basket Service owns current shopping intent.
 
@@ -317,7 +344,7 @@ Basket Service does not reserve stock and does not own final order state.
 
 ---
 
-## 7. Inventory Domain
+## 8. Inventory Domain
 
 Inventory Service owns stock and reservations.
 
@@ -337,7 +364,7 @@ It does not own product details or catalogue attributes.
 
 ---
 
-## 8. Order Domain
+## 9. Order Domain
 
 Order Service owns order lifecycle and checkout orchestration in the initial implementation.
 
@@ -362,11 +389,11 @@ quantity
 line_total
 ```
 
-`selected_attribute_summary` records customer-relevant product selections at checkout time, such as bed size or curtain drop, without making Order Service the owner of catalogue attributes.
+`selected_attribute_summary` records customer-relevant product selections at checkout time without making Order Service the owner of catalogue attributes.
 
 ---
 
-## 9. Payment Domain
+## 10. Payment Domain
 
 Payment Service owns payment state.
 
@@ -383,7 +410,7 @@ Payment Service must not store raw payment card data.
 
 ---
 
-## 10. Shipping Domain
+## 11. Shipping Domain
 
 Shipping Service owns shipment state and delivery options.
 
@@ -400,7 +427,7 @@ Shipping may store delivery address snapshots for fulfilment history.
 
 ---
 
-## 11. Notification Domain
+## 12. Notification Domain
 
 Notification Service owns notification delivery state.
 
@@ -418,7 +445,7 @@ Notification Service must process events idempotently.
 
 ---
 
-## 12. Customer Domain
+## 13. Customer Domain
 
 Customer Service owns customer profile and saved addresses.
 
@@ -434,7 +461,7 @@ Orders and shipments may store address snapshots for historical accuracy.
 
 ---
 
-## 13. Review Domain
+## 14. Review Domain
 
 Review Service owns product reviews and moderation state.
 
@@ -451,7 +478,7 @@ Review Service references products by ID.
 
 ---
 
-## 14. Recommendation Domain
+## 15. Recommendation Domain
 
 Recommendation Service owns recommendation signals and outputs.
 
@@ -468,7 +495,7 @@ Recommendation Service consumes product, order, review, and basket events but do
 
 ---
 
-## 15. Relationship Summary
+## 16. Relationship Summary
 
 | Concept | Source of Truth | Notes |
 |---|---|---|
@@ -489,7 +516,7 @@ Recommendation Service consumes product, order, review, and basket events but do
 
 ---
 
-## 16. Domain Events
+## 17. Domain Events
 
 Important events include:
 
@@ -516,7 +543,32 @@ Catalogue events are especially important for Search Service projections.
 
 ---
 
-## 17. Anti-Patterns to Avoid
+## 18. Initial Seed Product Concepts
+
+The initial local seed catalogue should include memorable Borough Furniture Store products.
+
+Suggested seed data:
+
+```text
+Gopher desk lamp
+Gopher cushion set
+Rob Pike wall tapestry
+Rivest super-secure lockbox
+Dijkstra pathfinding rug
+Grace Hopper debugging blanket
+Turing machine wall clock
+Rust crab coat hooks
+Python plush beanbag
+Kubernetes helm bookends
+```
+
+These products should intentionally cover different categories and attributes.
+
+This helps prove that the catalogue model supports varied product types.
+
+---
+
+## 19. Anti-Patterns to Avoid
 
 Avoid:
 
@@ -532,7 +584,7 @@ API Gateway owning checkout business rules
 
 ---
 
-## 18. Open Questions
+## 20. Open Questions
 
 | Question | Status |
 |---|---|
@@ -544,7 +596,7 @@ API Gateway owning checkout business rules
 
 ---
 
-## 19. Related Documents
+## 21. Related Documents
 
 ```text
 docs/architecture/service-boundaries.md
@@ -557,10 +609,10 @@ proto/acme/catalog/v1/README.md
 
 ---
 
-## 20. Summary
+## 22. Summary
 
 The bfstore domain model keeps Catalogue Service as the governed product source of truth while allowing varied product types through category-scoped attributes.
 
-Search Service owns denormalised product search projections, not product truth.
+The Borough Furniture Store backstory gives the catalogue a memorable identity while preserving professional ecommerce modelling.
 
-This gives bfstore flexibility for homeware, curtains, bed frames, and other product types without compromising service ownership or data governance.
+Search Service owns denormalised product search projections, not product truth.
