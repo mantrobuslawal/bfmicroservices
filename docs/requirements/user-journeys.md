@@ -985,6 +985,941 @@ Then the order is not confirmed and the customer receives a payment failure resp
 ---
 
 
+UJ-010: Reserve Stock During Checkout
+Goal
+
+The system needs to reserve stock so that ordered furniture is not oversold.
+
+Primary Actor
+
+System
+
+Priority
+
+Must
+
+Services Involved
+
+| Service             | Responsibility                                  |
+| ------------------- | ----------------------------------------------- |
+| `order-service`     | Requests stock reservation                      |
+| `inventory-service` | Reserves stock and records reservation          |
+| `Kafka`             | Carries stock reservation events where required |
+
+
+Preconditions
+
+Product exists.
+Requested quantity is available.
+Inventory Service is available.
+Order Service has a checkout request.
+
+Main Success Flow
+
+Order Service sends reservation request to Inventory Service.
+Inventory Service checks available stock.
+Inventory Service creates stock reservation.
+Inventory Service returns reservation ID.
+Inventory Service may publish StockReserved.
+
+Business Rules
+
+Stock reservation must be atomic.
+Stock cannot be reserved below zero.
+Reservation should have an expiry time.
+Reservation must be linked to checkout/order context.
+Duplicate reservation requests should be idempotent where possible.
+
+Failure Flow
+
+F1: Insufficient Stock
+
+Inventory Service checks stock.
+Available quantity is less than requested quantity.
+Inventory Service rejects reservation.
+Order Service rejects checkout.
+
+Events
+
+```text
+StockReserved
+StockReservationFailed
+StockReservationReleased
+StockReservationExpired
+```
+
+Acceptance Criteria
+
+```text
+Given sufficient stock exists
+When Order Service requests a reservation
+Then Inventory Service creates a stock reservation and returns a reservation ID
+
+Given insufficient stock exists
+When Order Service requests a reservation
+Then Inventory Service rejects the reservation
+```
+
+---
+
+UJ-011: Authorise Payment During Checkout
+Goal
+
+The system needs to authorise payment before confirming an order.
+
+Primary Actor
+
+System
+
+Priority
+
+Must
+
+Services Involved
+
+| Service           | Responsibility                        |
+| ----------------- | ------------------------------------- |
+| `order-service`   | Requests payment authorisation        |
+| `payment-service` | Authorises or rejects payment         |
+| `Kafka`           | Carries payment events where required |
+
+
+Preconditions
+
+Checkout request has valid payment method token or simulated details.
+Order total is calculated.
+Payment Service is available.
+
+Main Success Flow
+
+Order Service requests payment authorisation.
+Payment Service validates request.
+Payment Service simulates or performs authorisation.
+Payment Service records payment attempt.
+Payment Service returns payment authorisation result.
+Payment Service may publish PaymentAuthorised.
+
+Business Rules
+
+Payment must be authorised before order is confirmed.
+Raw card data must not be stored.
+Sensitive payment details must not be logged.
+Payment attempts must be auditable.
+Duplicate payment authorisation requests should be handled safely.
+
+Failure Flow
+
+F1: Payment Declined
+
+Payment Service receives authorisation request.
+Payment is declined.
+Payment Service records failed attempt.
+Payment Service returns failure.
+Order Service fails checkout or marks order as payment failed.
+
+Events
+
+```text
+PaymentAuthorised
+PaymentFailed
+PaymentCaptured
+PaymentRefunded
+```
+
+Acceptance Criteria
+
+```text
+Given valid payment details
+When Order Service requests payment authorisation
+Then Payment Service authorises payment and records the attempt
+
+Given payment is declined
+When Order Service requests payment authorisation
+Then Payment Service rejects the payment and records the failure
+```
+
+---
+
+UJ-012: Create Shipment
+Goal
+
+The system needs to create a shipment for a confirmed or confirmable order.
+
+Primary Actor
+
+System
+
+Priority
+
+Must
+
+Services Involved
+
+| Service            | Responsibility                                |
+| ------------------ | --------------------------------------------- |
+| `order-service`    | Requests shipment creation                    |
+| `shipping-service` | Creates shipment and tracks fulfilment status |
+| `Kafka`            | Carries shipment events                       |
+
+
+Preconditions
+
+Order details exist.
+Delivery address is valid.
+Delivery option is selected.
+Shipping Service is available.
+
+Main Success Flow
+
+Order Service sends shipment creation request.
+Shipping Service validates delivery address and order items.
+Shipping Service creates shipment record.
+Shipping Service returns shipment ID and tracking reference.
+Shipping Service publishes ShipmentCreated.
+
+Business Rules
+
+Shipment must reference an order.
+Shipment must have a delivery address.
+Shipment status must be tracked.
+Live carrier integration is out of scope initially.
+
+Failure Flow
+
+F1: Invalid Delivery Address
+
+Shipping Service receives shipment request.
+Address validation fails.
+Shipping Service rejects shipment creation.
+Order Service handles failure according to checkout design.
+
+Events
+
+```text
+ShipmentCreated
+ShipmentDispatched
+ShipmentDelivered
+ShipmentFailed
+```
+
+Acceptance Criteria
+
+```text
+Given an order has a valid delivery address
+When shipment creation is requested
+Then Shipping Service creates a shipment and returns a shipment ID
+```
+
+---
+
+UJ-013: Send Order Confirmation Notification
+Goal
+
+The system needs to notify the customer after an order is created.
+
+Primary Actor
+
+System
+
+Priority
+
+Must
+
+Services Involved
+
+| Service                | Responsibility                        |
+| ---------------------- | ------------------------------------- |
+| `order-service`        | Publishes order event                 |
+| `notification-service` | Consumes event and sends notification |
+| `Kafka`                | Carries notification event            |
+
+
+Preconditions
+
+Order has been created.
+Customer contact details are available.
+Notification Service is running.
+Kafka is available.
+
+Main Success Flow
+
+Order Service publishes OrderCreated.
+Notification Service consumes OrderCreated or NotificationRequested.
+Notification Service prepares confirmation message.
+Notification Service sends or simulates notification.
+Notification Service records notification status.
+Notification Service may publish NotificationSent.
+
+Business Rules
+
+Notification failure must not roll back order creation.
+Notification processing must be idempotent.
+Duplicate events must not send duplicate notifications where avoidable.
+Sensitive data must not be exposed in notification logs.
+
+Failure Flow
+
+F1: Notification Provider Failure
+
+Notification Service attempts to send confirmation.
+Provider or simulation fails.
+Notification Service retries according to retry policy.
+If retries fail, notification is marked failed or sent to DLQ.
+
+Events
+
+```text
+NotificationRequested
+NotificationSent
+NotificationFailed
+```
+
+Acceptance Criteria
+
+```text
+Given an OrderCreated event is published
+When Notification Service consumes the event
+Then a confirmation notification is sent or simulated
+
+Given the same event is consumed more than once
+When Notification Service processes the duplicate event
+Then duplicate notifications are not sent where idempotency is enforced
+```
+
+---
+
+UJ-014: View Order History
+Goal
+
+A registered customer wants to view previous orders.
+
+Primary Actor
+
+Registered Customer
+
+Priority
+
+Should
+
+Initial Version
+
+Later phase.
+
+Services Involved
+
+| Service         | Responsibility                 |
+| --------------- | ------------------------------ |
+| `api-gateway`   | Receives request               |
+| `auth-service`  | Provides identity context      |
+| `order-service` | Returns customer order history |
+
+Preconditions
+
+Customer is signed in.
+Customer has one or more orders.
+Order Service is available.
+
+Main Success Flow
+
+Customer signs in.
+Customer opens order history.
+API Gateway calls Order Service with customer identity.
+Order Service returns customer orders.
+API Gateway returns order history.
+
+Business Rules
+
+Customers may only view their own orders.
+Internal support access requires separate authorisation.
+Order history should be paginated.
+
+Acceptance Criteria
+
+```text
+Given a signed-in customer has orders
+When the customer requests order history
+Then only that customer’s orders are returned
+```
+
+---
+
+UJ-015: Track Shipment
+Goal
+
+A customer wants to track delivery progress.
+
+Primary Actor
+
+Registered Customer
+
+Priority
+
+Should
+
+Initial Version
+
+Later phase.
+
+Services Involved
+
+| Service            | Responsibility                         |
+| ------------------ | -------------------------------------- |
+| `api-gateway`      | Receives tracking request              |
+| `shipping-service` | Returns shipment status                |
+| `order-service`    | Validates order ownership where needed |
+
+Main Success Flow
+
+Customer opens order details.
+Customer requests shipment tracking.
+API Gateway calls Shipping Service.
+Shipping Service returns shipment status and tracking reference.
+
+Events
+
+```text
+ShipmentDispatched
+ShipmentInTransit
+ShipmentDelivered
+ShipmentDelayed
+```
+
+Acceptance Criteria
+
+```text
+Given a customer owns an order with a shipment
+When the customer views tracking
+Then the shipment status is returned
+```
+
+---
+
+UJ-016: Submit Product Review
+Goal
+
+A customer wants to review a product.
+
+Primary Actor
+
+Registered Customer
+
+Priority
+
+Could
+
+Initial Version
+
+Later phase.
+
+Services Involved
+
+| Service           | Responsibility                      |
+| ----------------- | ----------------------------------- |
+| `api-gateway`     | Receives review request             |
+| `auth-service`    | Provides identity context           |
+| `review-service`  | Stores review and rating            |
+| `catalog-service` | Validates product existence         |
+| `order-service`   | Optional: verifies purchase history |
+
+Preconditions
+
+Customer is signed in.
+Product exists.
+Customer may need to have purchased the product.
+
+Main Success Flow
+
+Customer opens product review form.
+Customer submits rating and review text.
+API Gateway calls Review Service.
+Review Service validates product.
+Review Service stores review.
+Review Service publishes ReviewCreated.
+Review becomes visible depending on moderation rules.
+
+Business Rules
+
+Rating must be within allowed range.
+Review text must meet length limits.
+Customer may only review eligible products.
+Reviews may require moderation before public display.
+
+Events
+
+```text
+ReviewCreated
+ReviewApproved
+ReviewRejected
+```
+
+Acceptance Criteria
+
+```text
+Given a signed-in customer submits a valid review
+When Review Service accepts it
+Then the review is stored and ReviewCreated is published
+```
+
+---
+
+UJ-017: Receive Product Recommendations
+Goal
+
+A customer wants to see related or recommended furniture products.
+
+Primary Actor
+
+Customer
+
+Priority
+
+Could
+
+Initial Version
+
+Later phase.
+
+Services Involved
+
+| Service                  | Responsibility                        |
+| ------------------------ | ------------------------------------- |
+| `api-gateway`            | Receives recommendation request       |
+| `recommendation-service` | Returns recommendations               |
+| `catalog-service`        | Provides product data                 |
+| `order-service` / Kafka  | May provide purchase behaviour events |
+| `basket-service` / Kafka | May provide basket behaviour events   |
+
+Main Success Flow
+
+Customer views a product or basket.
+API Gateway requests recommendations.
+Recommendation Service generates related products.
+Recommendation Service returns product IDs or summaries.
+API Gateway returns recommendations.
+
+Possible Recommendation Types
+
+```text
+related products
+popular products
+frequently bought together
+similar category
+similar material
+similar colour
+```
+
+Events Consumed
+
+```text
+ProductViewed
+BasketItemAdded
+OrderCreated
+ReviewCreated
+```
+
+Acceptance Criteria
+
+```text
+Given related products exist
+When a customer views a product
+Then the system returns relevant recommendations
+```
+
+---
+
+UJ-018: Handle Payment Failure
+Goal
+
+A customer needs a clear outcome when payment authorisation fails.
+
+Primary Actor
+
+Customer/System
+
+Priority
+
+Must
+
+Services Involved
+
+| Service                | Responsibility                        |
+| ---------------------- | ------------------------------------- |
+| `api-gateway`          | Returns failure response              |
+| `order-service`        | Coordinates failed checkout state     |
+| `payment-service`      | Records payment failure               |
+| `inventory-service`    | Releases or expires stock reservation |
+| `notification-service` | Optional failure notification         |
+
+
+Preconditions
+
+Customer has submitted checkout.
+Stock reservation may have succeeded.
+Payment authorisation fails.
+
+Main Failure Flow
+
+Customer submits checkout.
+Stock reservation succeeds.
+Payment authorisation fails.
+Payment Service records failed attempt.
+Order Service marks checkout/order as failed or not confirmed.
+Inventory reservation is released or allowed to expire.
+API Gateway returns payment failure response.
+
+Business Rules
+
+Failed payment must not create a confirmed order.
+Stock should not remain reserved indefinitely.
+Payment failures must be auditable.
+Sensitive payment details must not be logged.
+
+Events
+
+```text
+PaymentFailed
+StockReservationReleased
+OrderFailed
+```
+
+Acceptance Criteria
+
+```text
+Given payment authorisation fails
+When checkout is attempted
+Then no confirmed order is created and reserved stock is released or expires
+```
+
+---
+
+UJ-019: Handle Insufficient Stock
+Goal
+
+The system must prevent customers from ordering unavailable items.
+
+Primary Actor
+
+Customer/System
+
+Priority
+
+Must
+
+Services Involved
+
+| Service             | Responsibility                 |
+| ------------------- | ------------------------------ |
+| `api-gateway`       | Returns stock failure response |
+| `order-service`     | Coordinates checkout           |
+| `inventory-service` | Rejects stock reservation      |
+| `basket-service`    | Basket may remain unchanged    |
+
+Preconditions
+
+Customer has product in basket.
+Stock is unavailable or insufficient during checkout.
+
+Main Failure Flow
+
+Customer submits checkout.
+Order Service requests stock reservation.
+Inventory Service detects insufficient stock.
+Inventory Service rejects reservation.
+Order Service rejects checkout.
+Payment is not attempted.
+API Gateway returns insufficient stock response.
+
+Business Rules
+
+Payment must not be attempted if stock reservation fails.
+Basket may remain available for customer adjustment.
+Customer should receive clear failure reason.
+
+Events
+
+```StockReservationFailed```
+
+Acceptance Criteria
+
+```text
+Given insufficient stock exists
+When a customer checks out
+Then checkout is rejected and payment is not attempted
+```
+
+---
+
+UJ-020: Cancel Order
+Goal
+
+A customer wants to cancel an eligible order.
+
+Primary Actor
+
+Registered Customer
+
+Priority
+
+Should
+
+Initial Version
+
+Later phase.
+
+Services Involved
+
+| Service                | Responsibility                     |
+| ---------------------- | ---------------------------------- |
+| `api-gateway`          | Receives cancellation request      |
+| `auth-service`         | Provides identity context          |
+| `order-service`        | Validates cancellation eligibility |
+| `payment-service`      | Handles refund or void             |
+| `inventory-service`    | Releases stock where needed        |
+| `shipping-service`     | Cancels shipment where possible    |
+| `notification-service` | Sends cancellation notification    |
+
+Preconditions
+
+Customer is signed in.
+Order exists.
+Customer owns the order.
+Order status allows cancellation.
+
+Main Success Flow
+
+Customer requests order cancellation.
+API Gateway calls Order Service.
+Order Service validates ownership and order status.
+Order Service cancels order.
+Payment Service voids or refunds payment.
+Inventory Service releases stock if applicable.
+Shipping Service cancels shipment if possible.
+Order Service publishes OrderCancelled.
+Notification Service sends cancellation confirmation.
+
+Business Rules
+
+Delivered orders cannot be cancelled through this flow.
+Orders already dispatched may not be cancellable.
+Refund behaviour depends on payment status.
+Cancellation must be idempotent.
+
+Events
+
+```text
+OrderCancelled
+PaymentRefunded
+StockReservationReleased
+ShipmentCancelled
+NotificationRequested#
+```
+
+Acceptance Criteria
+
+```text 
+Given an order is eligible for cancellation
+When the customer cancels the order
+Then the order is cancelled and related payment, stock, shipment, and notification actions are performed
+```
+
+---
+
+## 8. Cross-Journey Requirements
+
+### 8.1 Authentication and Authorisation
+
+Protected journeys should require customer identity.
+
+Examples:
+
+```
+manage profile
+view order history
+submit review
+cancel order
+track shipment
+```
+
+Public journeys may not require authentication initially:
+
+```
+browse catalogue
+view product details
+search products
+view recommendations
+```
+
+---
+
+### 8.2 Correlation IDs
+
+All user journeys should propagate a correlation ID through:
+
+```
+API Gateway
+gRPC calls
+Kafka events
+logs
+traces
+```
+
+This is essential for debugging distributed workflows.
+
+---
+
+### 8.3 Idempotency
+
+Idempotency is required for journeys where duplicate requests or events could cause harm.
+
+Important examples:
+
+```
+checkout
+stock reservation
+payment authorisation
+order creation
+shipment creation
+notification sending
+order cancellation
+```
+
+---
+
+### 8.4 Error Handling
+
+Errors should be:
+
+clear to the caller
+logged with correlation ID
+mapped to consistent API error responses
+safe and not expose sensitive implementation details
+observable through metrics and traces
+
+---
+
+### 8.5 Eventual Consistency
+
+Some journeys accept temporary inconsistency.
+
+Examples:
+
+```
+search index updates after product changes
+recommendations after order events
+notification delivery after order creation
+review summaries after review submission
+```
+
+These should be documented and tested.
+
+----
+
+## 9. End-to-End Test Coverage
+
+The following journeys should become end-to-end tests.
+
+| Journey                                  | Test Priority |
+| ---------------------------------------- | ------------- |
+| Browse catalogue                         | Must          |
+| View product details                     | Must          |
+| Add to basket                            | Must          |
+| Update basket                            | Must          |
+| Successful checkout                      | Must          |
+| Insufficient stock checkout failure      | Must          |
+| Payment failure checkout failure         | Must          |
+| OrderCreated event triggers notification | Must          |
+| View order history                       | Should        |
+| Track shipment                           | Should        |
+| Submit review                            | Could         |
+| Search products                          | Should        |
+| Product recommendations                  | Could         |
+
+---
+
+## 10. Performance Testing Candidates
+
+The following journeys are good candidates for performance testing.
+
+| Journey                 | Performance Concern                   |
+| ----------------------- | ------------------------------------- |
+| Browse catalogue        | high read traffic                     |
+| Search products         | query latency and index performance   |
+| View product details    | read latency and service fan-out      |
+| Add to basket           | write latency                         |
+| Checkout                | multi-service latency and reliability |
+| Kafka notification flow | consumer lag and event throughput     |
+
+Initial performance targets will be defined in:
+
+```
+docs/requirements/non-functional-requirements.md
+docs/testing/performance-testing.md
+```
+
+---
+
+## 11. Resilience Testing Candidates
+
+The following journeys should be used for resilience testing.
+
+| Scenario                                      | Expected Behaviour                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------- |
+| Catalogue Service unavailable                 | Product browsing returns controlled failure                                  |
+| Inventory Service unavailable during checkout | Checkout fails safely                                                        |
+| Insufficient stock                            | Payment is not attempted                                                     |
+| Payment Service unavailable                   | Checkout fails safely or enters defined pending state                        |
+| Shipping Service unavailable                  | Order flow follows defined compensation or pending fulfilment behaviour      |
+| Kafka unavailable                             | Critical synchronous flow behaviour is defined; events are retried or stored |
+| Notification Service unavailable              | Order creation still succeeds                                                |
+| Duplicate `OrderCreated` event                | Notification is not duplicated where idempotency is enforced                 |
+| MySQL unavailable                             | Affected service fails safely and exposes readiness failure                  |
+
+---
+
+## 12. Observability Mapping
+
+Each major journey should have enough observability to diagnose failures.
+
+| Journey               | Key Signals                                                             |
+| --------------------- | ----------------------------------------------------------------------- |
+| Browse catalogue      | request count, latency, catalogue errors                                |
+| View product details  | product lookup latency, not found count, inventory lookup failures      |
+| Add to basket         | basket mutation count, validation failures                              |
+| Checkout              | checkout latency, success rate, failure reason, downstream call latency |
+| Stock reservation     | reservation success/failure count, stock conflicts                      |
+| Payment authorisation | success/failure count, provider latency, declined payments              |
+| Shipment creation     | shipment success/failure count                                          |
+| Notification          | event lag, notification success/failure, duplicate suppression          |
+| Search                | query latency, no-result rate, index update lag                         |
+| Recommendations       | recommendation latency, fallback count                                  |
+
+---
+
+## 13. Journey-to-Service Matrix
+
+| Journey              | API Gateway | Auth     | Customer | Catalogue | Inventory | Basket   | Order    | Payment  | Shipping | Notification | Review   | Search   | Recommendation |
+| -------------------- | ----------- | -------- | -------- | --------- | --------- | -------- | -------- | -------- | -------- | ------------ | -------- | -------- | -------------- |
+| Browse catalogue     | Yes         | No       | No       | Yes       | Optional  | No       | No       | No       | No       | No           | No       | Later    | No             |
+| View product details | Yes         | No       | No       | Yes       | Optional  | No       | No       | No       | No       | No           | No       | No       | Optional       |
+| Search products      | Yes         | No       | No       | Optional  | Optional  | No       | No       | No       | No       | No           | No       | Yes      | No             |
+| Register account     | Yes         | Yes      | Yes      | No        | No        | No       | No       | No       | No       | Optional     | No       | No       | No             |
+| Sign in              | Yes         | Yes      | No       | No        | No        | No       | No       | No       | No       | No           | No       | No       | No             |
+| Manage profile       | Yes         | Yes      | Yes      | No        | No        | No       | No       | No       | No       | Optional     | No       | No       | No             |
+| Add to basket        | Yes         | Optional | No       | Yes       | Optional  | Yes      | No       | No       | No       | No           | No       | No       | Optional       |
+| Update basket        | Yes         | Optional | No       | Optional  | Optional  | Yes      | No       | No       | No       | No           | No       | No       | Optional       |
+| Checkout             | Yes         | Optional | Optional | Optional  | Yes       | Yes      | Yes      | Yes      | Yes      | Yes          | No       | No       | Optional       |
+| View order history   | Yes         | Yes      | Optional | No        | No        | No       | Yes      | Optional | Optional | No           | No       | No       | No             |
+| Track shipment       | Yes         | Yes      | Optional | No        | No        | No       | Optional | No       | Yes      | No           | No       | No       | No             |
+| Submit review        | Yes         | Yes      | Optional | Yes       | No        | No       | Optional | No       | No       | No           | Yes      | Optional | Optional       |
+| Recommendations      | Yes         | Optional | Optional | Yes       | No        | Optional | Optional | No       | No       | No           | Optional | Optional | Yes            |
+
+---
+
+
+
+
+
+
 
 
 
