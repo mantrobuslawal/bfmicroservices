@@ -808,8 +808,373 @@ Basket Service should not create orders.
 
 ---
 
+### 6.7 Order Service
 
+### Purpose
 
+The order-service owns order creation, order lifecycle, and order history.
+
+It coordinates the checkout workflow.
+
+It answers:
+
+```
+Has an order been created?
+What is the current order state?
+What items were purchased?
+What happened during checkout?
+```
+
+### Owns
+
+```
+orders
+order items
+order status
+order lifecycle
+order status history
+checkout orchestration
+order failure state
+order cancellation state
+```
+
+### Does Not Own
+
+```
+product catalogue source of truth
+stock source of truth
+payment processing internals
+shipment fulfilment internals
+notification delivery
+customer identity
+```
+
+### Inbound APIs
+
+Potential gRPC APIs:
+
+```
+CreateOrder
+GetOrder
+ListCustomerOrders
+CancelOrder
+GetOrderStatus
+Outbound Calls
+```
+
+May call:
+
+```
+basket-service
+inventory-service
+payment-service
+shipping-service
+customer-service
+```
+
+Events Published
+
+```
+OrderCreated
+OrderConfirmed
+OrderFailed
+OrderCancelled
+OrderFulfilled
+OrderRefunded
+```
+
+Events Consumed
+
+Potential events:
+
+```
+PaymentAuthorised
+PaymentFailed
+ShipmentCreated
+ShipmentFailed
+StockReserved
+StockReservationFailed
+```
+
+The first version may use synchronous responses for checkout and consume fewer events.
+
+### Data Owned
+
+```
+orders
+order_items
+order_status_history
+checkout_attempts
+```
+
+### Boundary Rules
+
+Order Service owns order lifecycle but does not own payment state.
+Order Service owns order items and historical snapshots.
+Order Service should not directly modify stock.
+Order Service should not directly send notifications.
+Order creation must be idempotent where possible.
+Duplicate checkout requests must not create duplicate confirmed orders.
+Order Service should coordinate checkout, but long-running downstream side effects may be event-driven.
+
+### Important Design Decision
+
+The initial architecture proposes that checkout orchestration lives in ```order-service```.
+
+This is acceptable because order creation is the business process being coordinated. If orchestration grows significantly, a later ADR may consider a dedicated workflow/orchestration component.
+
+---
+
+### 6.8 Payment Service
+
+### Purpose
+
+The payment-service owns payment attempts, payment state, authorisation, capture, and refunds.
+
+It answers:
+
+```
+Was payment authorised?
+Was payment captured?
+Did payment fail?
+Was a refund issued?
+```
+
+### Owns
+
+```
+payments
+payment attempts
+payment authorisation state
+payment capture state
+refunds
+provider references
+payment audit records
+```
+
+### Does Not Own
+
+```
+order lifecycle
+stock reservation
+shipment creation
+customer profile
+raw card storage
+```
+
+### Inbound APIs
+
+Potential gRPC APIs:
+
+```
+AuthorisePayment
+CapturePayment
+RefundPayment
+GetPayment
+ListPaymentAttempts
+```
+
+### Events Published
+
+```
+PaymentAuthorised
+PaymentFailed
+PaymentCaptured
+PaymentRefunded
+PaymentCancelled
+```
+
+### Events Consumed
+
+Potential events:
+
+```
+OrderCreated
+OrderCancelled
+```
+
+### Data Owned
+
+```
+payments
+payment_attempts
+refunds
+payment_provider_references
+```
+
+### Boundary Rules
+Payment Service owns payment state; Order Service owns order state.
+Raw card data must not be stored.
+Sensitive payment details must not be logged.
+Payment requests should be idempotent where possible.
+Payment failures must be auditable.
+Real payment provider integration is out of scope for the initial version; simulation is acceptable.
+
+---
+
+### 6.9 Shipping Service
+
+### Purpose
+
+The shipping-service owns delivery options, shipment creation, and shipment lifecycle.
+
+It answers:
+
+```
+Can this order be shipped?
+What shipment was created?
+What is the fulfilment status?
+What is the tracking reference?
+```
+
+### Owns
+
+```
+delivery options
+shipments
+shipment status
+tracking references
+shipment events
+delivery state
+```
+
+### Does Not Own
+
+```
+order creation
+payment state
+stock ownership
+customer profile source of truth
+notification delivery
+```
+
+### Inbound APIs
+
+Potential gRPC APIs:
+
+```
+GetDeliveryOptions
+CreateShipment
+GetShipment
+UpdateShipmentStatus
+CancelShipment
+```
+
+### Events Published
+
+```
+ShipmentCreated
+ShipmentDispatched
+ShipmentDelivered
+ShipmentDelayed
+ShipmentFailed
+ShipmentCancelled
+```
+
+### Events Consumed
+
+Potential events:
+
+```
+OrderCreated
+OrderCancelled
+PaymentAuthorised
+```
+
+### Data Owned
+
+```
+delivery_options
+shipments
+shipment_status_history
+tracking_events
+```
+
+### Boundary Rules
+
+Shipping Service owns shipment state, not order state.
+Order Service may request shipment creation.
+Shipment failure must be visible to Order Service and Operations.
+Live carrier integration is out of scope initially.
+Shipment records should use delivery address snapshots, not depend on mutable customer address records.
+
+---
+
+### 6.10 Notification Service
+
+### Purpose
+
+The notification-service owns customer-facing notifications and delivery status.
+
+It answers:
+
+```
+Was a notification requested?
+Was it sent?
+Did it fail?
+Should it be retried?
+```
+
+### Owns
+
+```
+notification requests
+notification templates
+notification delivery attempts
+notification status
+retry state
+provider references
+Does Not Own
+order lifecycle
+payment state
+shipment state
+customer profile source of truth
+business decision to create an order
+```
+
+### Inbound APIs
+
+Potential gRPC APIs:
+
+```
+RequestNotification
+GetNotificationStatus
+```
+
+The initial version may primarily consume Kafka events rather than expose many synchronous APIs.
+
+```
+Events Published
+NotificationSent
+NotificationFailed
+NotificationRetryScheduled
+Events Consumed
+OrderCreated
+OrderCancelled
+PaymentFailed
+ShipmentCreated
+ShipmentDispatched
+ShipmentDelivered
+NotificationRequested
+```
+
+### Data Owned
+
+```
+notifications
+notification_attempts
+notification_templates
+```
+
+### Boundary Rules
+
+Notification failure must not roll back order creation.
+Notification processing must be idempotent.
+Duplicate events should not cause duplicate customer messages where avoidable.
+Notification Service may request customer contact details, but Customer Service owns the profile.
+Real email/SMS provider integration is out of scope initially; simulation is acceptable.
+
+---
 
 
 
