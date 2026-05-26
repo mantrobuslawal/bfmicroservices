@@ -4,7 +4,7 @@
 
 This document defines the service database design approach for **bfstore**, ACME Ltd’s fictional online furniture store backend.
 
-It explains how each service owns its data, how MySQL schemas are separated, how tables should be designed, how cross-service data references should work, and how the initial database model supports the checkout vertical slice.
+It explains how each service owns its data, how MySQL schemas are separated, how tables should be designed, how cross-service data references should work, and how the catalogue data model supports flexible product types such as homeware, curtains, bed frames, rugs, lamps, sofas, and wardrobes.
 
 This document is intended for engineers, reviewers, technical leads, and potential clients evaluating bfstore’s data architecture and microservice design maturity.
 
@@ -22,6 +22,7 @@ table ownership
 cross-service references
 snapshots
 projections
+flexible catalogue attributes
 transaction boundaries
 database users
 migration ownership
@@ -36,6 +37,7 @@ docs/data/data-ownership.md
 docs/data/mysql-standards.md
 docs/data/migrations.md
 docs/architecture/service-boundaries.md
+docs/architecture/domain-model.md
 ```
 
 ---
@@ -62,7 +64,26 @@ A service must not directly query another service’s tables.
 
 ---
 
-## 4. Logical Database Model
+## 4. Source of Truth vs Projection
+
+bfstore separates the product source of truth from optimised read/search projections.
+
+```text
+Catalogue Service
+  owns governed product data in MySQL
+
+Search Service
+  owns denormalised product search documents and facets
+
+Recommendation Service
+  owns recommendation signals and outputs
+```
+
+This allows the catalogue to remain governed and auditable while allowing the search representation to be flexible, denormalised, and optimised for browse/filter behaviour.
+
+---
+
+## 5. Logical Database Model
 
 In local development, bfstore may run one MySQL instance with multiple schemas.
 
@@ -90,28 +111,28 @@ The logical ownership rule remains the same.
 
 ---
 
-## 5. Schema Ownership Summary
+## 6. Schema Ownership Summary
 
 | Service | Schema | Purpose |
 |---|---|---|
 | `auth-service` | `bfstore_auth` | Identity, credentials, sessions, roles |
 | `customer-service` | `bfstore_customer` | Customer profiles, addresses, preferences |
-| `catalog-service` | `bfstore_catalog` | Products, variants, categories, prices |
-| `inventory-service` | `bfstore_inventory` | Stock, warehouses, reservations |
+| `catalog-service` | `bfstore_catalog` | Products, categories, variants, category-scoped attributes, catalogue pricing |
+| `inventory-service` | `bfstore_inventory` | Stock levels, stock reservations, warehouse availability |
 | `basket-service` | `bfstore_basket` | Baskets and basket items |
 | `order-service` | `bfstore_order` | Orders, order items, order state |
 | `payment-service` | `bfstore_payment` | Payments, attempts, refunds |
 | `shipping-service` | `bfstore_shipping` | Shipments, delivery options, tracking |
 | `notification-service` | `bfstore_notification` | Notifications, attempts, templates |
 | `review-service` | `bfstore_review` | Reviews, ratings, moderation |
-| `search-service` | `bfstore_search` | Search projections and index state |
+| `search-service` | `bfstore_search` | Search projections, facets, search index state |
 | `recommendation-service` | `bfstore_recommendation` | Recommendation signals and results |
 
 ---
 
-## 6. Database Access Rules
+## 7. Database Access Rules
 
-## 6.1 Allowed
+## 7.1 Allowed
 
 A service may:
 
@@ -124,7 +145,7 @@ create indexes in its own schema
 own transaction boundaries inside its own schema
 ```
 
-## 6.2 Forbidden
+## 7.2 Forbidden
 
 A service must not:
 
@@ -154,7 +175,7 @@ store an order-time customer/address snapshot where required
 
 ---
 
-## 7. Cross-Service References
+## 8. Cross-Service References
 
 Services may store references to entities owned by other services.
 
@@ -166,6 +187,7 @@ order-service stores product_id
 payment-service stores order_id
 shipping-service stores order_id
 basket-service stores product_id
+inventory-service stores product_id
 ```
 
 Rules:
@@ -180,9 +202,9 @@ store snapshots where historical accuracy is required
 
 ---
 
-## 8. Foreign Key Strategy
+## 9. Foreign Key Strategy
 
-## 8.1 Within a Service Schema
+## 9.1 Within a Service Schema
 
 Foreign keys are allowed within a service-owned schema.
 
@@ -195,7 +217,7 @@ bfstore_order.order_items
 
 `order_items.order_id` may reference `orders.order_id`.
 
-## 8.2 Across Service Schemas
+## 9.2 Across Service Schemas
 
 Foreign keys across service schemas are not allowed.
 
@@ -216,7 +238,7 @@ ownership becomes unclear
 
 ---
 
-## 9. Identifier Strategy
+## 10. Identifier Strategy
 
 Use string IDs for service contracts and stored cross-service references.
 
@@ -232,6 +254,8 @@ Example IDs:
 
 ```text
 prd_01HX...
+cat_01HX...
+attr_01HX...
 cus_01HX...
 bas_01HX...
 ord_01HX...
@@ -249,7 +273,7 @@ indexes should support frequent lookup by entity ID
 
 ---
 
-## 10. Initial Implementation Schemas
+## 11. Initial Implementation Schemas
 
 The first implementation should focus on the checkout vertical slice.
 
@@ -275,28 +299,81 @@ bfstore_search
 bfstore_recommendation
 ```
 
-This allows the project to prove the core business flow before expanding into secondary services.
+Search Service may be introduced after catalogue events are stable.
 
 ---
 
-## 11. Catalogue Schema
+## 12. Catalogue Schema
 
-## 11.1 Purpose
+## 12.1 Purpose
 
-The Catalogue schema stores product information owned by `catalog-service`.
+The Catalogue schema stores governed product information owned by `catalog-service`.
 
-## 11.2 Candidate Tables
+It must support many product types without creating one large `products` table containing hundreds of nullable product-type-specific columns.
+
+Examples of future product types:
+
+```text
+curtains
+bed frames
+mattresses
+sofas
+rugs
+lamps
+wardrobes
+tables
+mirrors
+cushions
+homeware
+```
+
+## 12.2 Design Approach
+
+Use a relational core product model plus category-scoped flexible attributes.
+
+```text
+Core product tables
+  store fields common to most products
+
+Category and attribute tables
+  define which attributes apply to which product categories
+
+Attribute value tables
+  store product-specific values
+
+Search projection
+  denormalises product and attribute data for browse/filter/search
+```
+
+This avoids both extremes:
+
+```text
+one huge products table with many nullable columns
+uncontrolled schemaless product documents with weak governance
+```
+
+## 12.3 Candidate Tables
+
+Initial priority:
 
 ```text
 products
 product_variants
 categories
-product_images
-product_attributes
-product_price_history
+product_attribute_definitions
+product_attribute_values
 ```
 
-## 11.3 `products`
+Later:
+
+```text
+product_attribute_options
+product_images
+product_price_history
+outbox_events
+```
+
+## 12.4 `products`
 
 Candidate fields:
 
@@ -308,13 +385,27 @@ description
 status
 base_price_minor
 currency_code
-material
-colour
+brand
 created_at
 updated_at
 ```
 
-## 11.4 `product_variants`
+The `products` table should contain common product data only.
+
+Avoid placing highly specific fields here, such as:
+
+```text
+curtain_drop_cm
+bed_size
+bulb_type
+rug_shape
+mattress_firmness
+sofa_orientation
+```
+
+These belong in product attributes.
+
+## 12.5 `product_variants`
 
 Candidate fields:
 
@@ -322,9 +413,7 @@ Candidate fields:
 variant_id
 product_id
 sku
-size
-colour
-material
+variant_name
 price_minor
 currency_code
 status
@@ -332,26 +421,198 @@ created_at
 updated_at
 ```
 
-## 11.5 Ownership Rules
+Variant-specific attribute values may be supported later if required.
+
+Examples:
+
+```text
+same bed frame in double, king, and super king
+same curtains in multiple drops and widths
+same sofa in different fabrics or orientations
+```
+
+## 12.6 `categories`
+
+Candidate fields:
+
+```text
+category_id
+parent_category_id
+name
+slug
+description
+status
+created_at
+updated_at
+```
+
+Categories define the taxonomy for products and attribute rules.
+
+Example categories:
+
+```text
+curtains
+bed-frames
+rugs
+lamps
+sofas
+wardrobes
+```
+
+## 12.7 `product_attribute_definitions`
+
+This table defines attributes that are valid for a category.
+
+Candidate fields:
+
+```text
+attribute_id
+category_id
+code
+display_name
+description
+data_type
+unit
+is_required
+is_filterable
+is_variant_defining
+allowed_values_json
+display_order
+status
+created_at
+updated_at
+```
+
+Example rows:
+
+| Category | Code | Data Type | Unit | Filterable |
+|---|---|---|---|---|
+| curtains | `drop_cm` | number | cm | yes |
+| curtains | `heading_type` | string | none | yes |
+| bed-frames | `bed_size` | string | none | yes |
+| bed-frames | `storage_type` | string | none | yes |
+| rugs | `shape` | string | none | yes |
+| lamps | `bulb_type` | string | none | yes |
+
+## 12.8 `product_attribute_values`
+
+This table stores product-specific attribute values.
+
+Candidate fields:
+
+```text
+product_attribute_value_id
+product_id
+variant_id
+attribute_id
+value_string
+value_number
+value_boolean
+value_json
+unit
+created_at
+updated_at
+```
+
+Rules:
+
+```text
+only one value column should be populated according to attribute data type
+attribute_id determines expected type and unit
+variant_id is optional and used only when value differs per variant
+```
+
+Example values:
+
+| Product Type | Attribute | Value |
+|---|---|---|
+| Curtain | `drop_cm` | `228` |
+| Curtain | `heading_type` | `eyelet` |
+| Bed frame | `bed_size` | `king` |
+| Bed frame | `storage_type` | `ottoman` |
+| Rug | `shape` | `round` |
+| Lamp | `bulb_type` | `E27` |
+
+## 12.9 `product_attribute_options`
+
+Optional table for controlled values.
+
+Candidate fields:
+
+```text
+attribute_option_id
+attribute_id
+value
+display_name
+display_order
+status
+created_at
+updated_at
+```
+
+This is useful where values should be governed rather than free text.
+
+Examples:
+
+```text
+bed_size: single, double, king, super king
+heading_type: eyelet, pencil pleat, tab top
+storage_type: none, drawer, ottoman
+```
+
+## 12.10 Ownership Rules
 
 ```text
 catalog-service owns product truth
+catalog-service owns category taxonomy
+catalog-service owns product attribute definitions
+catalog-service owns product attribute values
 catalog-service owns product status
-catalog-service owns product pricing in the initial version
+catalog-service owns catalogue price in the initial version
 inventory-service owns stock levels
-search-service may later store product projections
+search-service owns denormalised search documents and facets
 order-service may store product snapshots
 ```
 
 ---
 
-## 12. Inventory Schema
+## 13. Search Projection Relationship
 
-## 12.1 Purpose
+Search Service should consume catalogue events and build a denormalised search document.
 
-The Inventory schema stores stock, warehouse, and reservation data owned by `inventory-service`.
+Example search document:
 
-## 12.2 Candidate Tables
+```json
+{
+  "product_id": "prd_123",
+  "title": "Blackout Eyelet Curtains",
+  "category": "curtains",
+  "price_minor": 8999,
+  "currency_code": "GBP",
+  "attributes": {
+    "colour": "navy",
+    "drop_cm": 228,
+    "width_cm": 167,
+    "lining": "blackout",
+    "heading_type": "eyelet"
+  },
+  "filterable": {
+    "colour": ["navy"],
+    "lining": ["blackout"],
+    "heading_type": ["eyelet"]
+  }
+}
+```
+
+This allows customer-facing browse and filter behaviour to be optimised without making Search Service the product source of truth.
+
+---
+
+## 14. Inventory Schema
+
+Inventory Service stores stock, warehouse, and reservation data.
+
+Candidate tables:
 
 ```text
 inventory_items
@@ -362,69 +623,17 @@ stock_reservation_items
 stock_adjustments
 ```
 
-## 12.3 `stock_levels`
+Inventory stores `product_id` and `variant_id` as references only.
 
-Candidate fields:
-
-```text
-stock_level_id
-product_id
-variant_id
-warehouse_id
-available_quantity
-reserved_quantity
-created_at
-updated_at
-```
-
-## 12.4 `stock_reservations`
-
-Candidate fields:
-
-```text
-reservation_id
-order_id
-basket_id
-customer_id
-status
-idempotency_key
-expires_at
-created_at
-updated_at
-```
-
-## 12.5 `stock_reservation_items`
-
-Candidate fields:
-
-```text
-reservation_item_id
-reservation_id
-product_id
-variant_id
-quantity
-created_at
-```
-
-## 12.6 Ownership Rules
-
-```text
-inventory-service is the only service that changes stock levels
-stock reservations must be idempotent
-stock release must be idempotent
-stock cannot be reserved below zero
-reservation expiry must be observable
-```
+It does not own product names, descriptions, or attribute definitions.
 
 ---
 
-## 13. Basket Schema
+## 15. Basket Schema
 
-## 13.1 Purpose
+Basket Service stores shopping basket data.
 
-The Basket schema stores shopping basket data owned by `basket-service`.
-
-## 13.2 Candidate Tables
+Candidate tables:
 
 ```text
 baskets
@@ -432,55 +641,15 @@ basket_items
 basket_events_outbox
 ```
 
-## 13.3 `baskets`
-
-Candidate fields:
-
-```text
-basket_id
-customer_id
-session_id
-status
-created_at
-updated_at
-expires_at
-checked_out_at
-```
-
-## 13.4 `basket_items`
-
-Candidate fields:
-
-```text
-basket_item_id
-basket_id
-product_id
-variant_id
-quantity
-unit_price_snapshot_minor
-currency_code
-created_at
-updated_at
-```
-
-## 13.5 Ownership Rules
-
-```text
-basket-service owns current shopping intent
-basket-service does not reserve stock
-basket-service may store price snapshots for display
-final checkout price should be confirmed or snapshotted by order-service
-```
+Basket may store display price snapshots for convenience, but final checkout price should be confirmed or snapshotted by Order Service.
 
 ---
 
-## 14. Order Schema
+## 16. Order Schema
 
-## 14.1 Purpose
+Order Service stores order lifecycle data.
 
-The Order schema stores order lifecycle data owned by `order-service`.
-
-## 14.2 Candidate Tables
+Candidate tables:
 
 ```text
 orders
@@ -491,79 +660,27 @@ order_failures
 outbox_events
 ```
 
-## 14.3 `orders`
+Order item snapshots should preserve product details at checkout time.
 
-Candidate fields:
-
-```text
-order_id
-order_number
-customer_id
-basket_id
-status
-total_amount_minor
-currency_code
-delivery_address_snapshot_json
-idempotency_key
-created_at
-updated_at
-confirmed_at
-cancelled_at
-```
-
-## 14.4 `order_items`
-
-Candidate fields:
+Examples:
 
 ```text
-order_item_id
-order_id
-product_id
-variant_id
 product_name_snapshot
 sku_snapshot
 unit_price_minor
 currency_code
-quantity
-line_total_minor
-created_at
+selected_attribute_summary_json
 ```
 
-## 14.5 `checkout_attempts`
-
-Candidate fields:
-
-```text
-checkout_attempt_id
-customer_id
-basket_id
-idempotency_key
-status
-failure_reason
-created_at
-updated_at
-completed_at
-```
-
-## 14.6 Ownership Rules
-
-```text
-order-service owns order lifecycle
-order-service stores historical product and address snapshots
-order-service does not own stock, payment, or shipment state
-order-service may coordinate checkout but must respect service ownership
-order creation must be idempotent
-```
+The optional `selected_attribute_summary_json` can record customer-relevant selections such as curtain drop or bed size without making Order Service own catalogue attributes.
 
 ---
 
-## 15. Payment Schema
+## 17. Payment Schema
 
-## 15.1 Purpose
+Payment Service stores payment state.
 
-The Payment schema stores payment data owned by `payment-service`.
-
-## 15.2 Candidate Tables
+Candidate tables:
 
 ```text
 payments
@@ -573,61 +690,15 @@ payment_status_history
 outbox_events
 ```
 
-## 15.3 `payments`
-
-Candidate fields:
-
-```text
-payment_id
-order_id
-customer_id
-status
-amount_minor
-currency_code
-provider
-provider_reference
-idempotency_key
-created_at
-updated_at
-authorised_at
-captured_at
-```
-
-## 15.4 `payment_attempts`
-
-Candidate fields:
-
-```text
-payment_attempt_id
-payment_id
-order_id
-attempt_type
-status
-failure_reason
-provider_reference
-created_at
-completed_at
-```
-
-## 15.5 Ownership Rules
-
-```text
-payment-service owns payment state
-payment-service must not store raw card data
-payment operations must be idempotent
-payment attempts must be auditable
-payment provider references should be protected
-```
+Payment Service must not store raw payment card data.
 
 ---
 
-## 16. Shipping Schema
+## 18. Shipping Schema
 
-## 16.1 Purpose
+Shipping Service stores shipment and fulfilment data.
 
-The Shipping schema stores shipment and fulfilment data owned by `shipping-service`.
-
-## 16.2 Candidate Tables
+Candidate tables:
 
 ```text
 delivery_options
@@ -637,45 +708,15 @@ tracking_events
 outbox_events
 ```
 
-## 16.3 `shipments`
-
-Candidate fields:
-
-```text
-shipment_id
-order_id
-customer_id
-status
-delivery_option_id
-tracking_reference
-carrier
-delivery_address_snapshot_json
-idempotency_key
-created_at
-updated_at
-dispatched_at
-delivered_at
-```
-
-## 16.4 Ownership Rules
-
-```text
-shipping-service owns shipment state
-shipments should be created idempotently
-delivery address should be snapshotted
-carrier integrations may be simulated initially
-shipment failure behaviour must be documented
-```
+Shipping may store delivery address snapshots for fulfilment history.
 
 ---
 
-## 17. Notification Schema
+## 19. Notification Schema
 
-## 17.1 Purpose
+Notification Service stores notification request, attempt, and delivery state.
 
-The Notification schema stores notification request, attempt, and delivery state owned by `notification-service`.
-
-## 17.2 Candidate Tables
+Candidate tables:
 
 ```text
 notification_templates
@@ -684,68 +725,15 @@ notification_attempts
 processed_events
 ```
 
-## 17.3 `notifications`
-
-Candidate fields:
-
-```text
-notification_id
-event_id
-notification_type
-recipient_reference
-channel
-status
-template_id
-created_at
-updated_at
-sent_at
-```
-
-## 17.4 `notification_attempts`
-
-Candidate fields:
-
-```text
-notification_attempt_id
-notification_id
-provider
-status
-failure_reason
-attempt_number
-created_at
-completed_at
-```
-
-## 17.5 `processed_events`
-
-Candidate fields:
-
-```text
-event_id
-event_type
-producer
-processed_at
-processing_status
-```
-
-## 17.6 Ownership Rules
-
-```text
-notification-service owns delivery state
-notification failure must not roll back order creation
-event processing must be idempotent
-notification data should minimise PII
-```
+Notification consumers must be idempotent.
 
 ---
 
-## 18. Review Schema
+## 20. Review Schema
 
-## 18.1 Purpose
+Review Service may later store product reviews, ratings, and moderation state.
 
-The Review schema stores product reviews, ratings, and moderation data owned by `review-service`.
-
-## 18.2 Candidate Tables
+Candidate tables:
 
 ```text
 reviews
@@ -755,26 +743,15 @@ review_reports
 outbox_events
 ```
 
-## 18.3 Ownership Rules
-
-```text
-review-service owns review content
-review-service owns moderation state
-review-service may validate purchase eligibility through order-service
-rating summaries may be eventually consistent
-```
-
-This schema may be deferred until the checkout vertical slice is complete.
+Review Service stores `product_id` as a reference only.
 
 ---
 
-## 19. Search Schema
+## 21. Search Schema
 
-## 19.1 Purpose
+Search Service stores search projections and index state.
 
-The Search schema stores search projections and index state owned by `search-service`.
-
-## 19.2 Candidate Tables
+Candidate tables:
 
 ```text
 search_index_entries
@@ -783,26 +760,19 @@ projection_offsets
 search_query_logs
 ```
 
-## 19.3 Ownership Rules
+Search owns denormalised read/search documents only.
 
-```text
-search-service owns search projection only
-catalog-service remains product source of truth
-search projection must be rebuildable
-search index lag should be observable
-```
+Catalogue remains product source of truth.
 
-This schema may be deferred until product browsing and catalogue events are stable.
+Search projections must be rebuildable where practical.
 
 ---
 
-## 20. Recommendation Schema
+## 22. Recommendation Schema
 
-## 20.1 Purpose
+Recommendation Service stores recommendation signals and outputs.
 
-The Recommendation schema stores recommendation signals and outputs owned by `recommendation-service`.
-
-## 20.2 Candidate Tables
+Candidate tables:
 
 ```text
 recommendation_signals
@@ -811,20 +781,11 @@ recommendation_results
 recommendation_feedback
 ```
 
-## 20.3 Ownership Rules
-
-```text
-recommendation-service owns recommendation outputs
-recommendation-service does not own product or order truth
-recommendations must exclude inactive products
-recommendation failure must not block browsing or checkout
-```
-
-This schema may be deferred until core commerce events are available.
+Recommendation Service does not own product truth or order truth.
 
 ---
 
-## 21. Snapshot Design
+## 23. Snapshot Design
 
 Snapshots are allowed when historical accuracy is required.
 
@@ -832,12 +793,13 @@ Important snapshots:
 
 ```text
 order item product snapshot
+order item selected attribute summary
 order delivery address snapshot
 shipment delivery address snapshot
 payment provider reference
 ```
 
-## 21.1 Snapshot Rules
+Snapshot rules:
 
 ```text
 snapshot fields must be clearly named
@@ -846,18 +808,9 @@ snapshots should contain only necessary information
 PII snapshots should be minimised and protected
 ```
 
-Example order item snapshot fields:
-
-```text
-product_name_snapshot
-sku_snapshot
-unit_price_minor
-currency_code
-```
-
 ---
 
-## 22. Projection Design
+## 24. Projection Design
 
 Projections are allowed for optimised reads.
 
@@ -880,15 +833,9 @@ projection must not become hidden source of truth
 
 ---
 
-## 23. Outbox Table Design
+## 25. Outbox Table Design
 
 Services that write data and publish events should consider an outbox table.
-
-Candidate table:
-
-```text
-outbox_events
-```
 
 Candidate fields:
 
@@ -916,20 +863,20 @@ payment-service
 inventory-service
 shipping-service
 catalog-service
-review-service
 ```
 
-The first serious implementation should consider outbox for `order-service` because `OrderCreated` is critical.
+Catalogue Service should use outbox if catalogue events become critical to search or recommendations.
 
 ---
 
-## 24. Transaction Boundaries
+## 26. Transaction Boundaries
 
 Transactions should stay within one service schema.
 
 Allowed:
 
 ```text
+catalog-service transaction creates product and attribute values
 order-service transaction creates order, order_items, outbox_event
 inventory-service transaction reserves stock and records reservation
 payment-service transaction records payment and payment_attempt
@@ -938,51 +885,31 @@ payment-service transaction records payment and payment_attempt
 Avoid:
 
 ```text
-single transaction across order, payment, inventory, and shipping schemas
+single transaction across order, payment, inventory, shipping, and catalogue schemas
 ```
-
-Use:
-
-```text
-idempotency
-state machines
-events
-compensating actions
-outbox
-reconciliation
-```
-
-instead of distributed database transactions.
 
 ---
 
-## 25. Indexing Strategy
+## 27. Indexing Strategy
 
 Indexes should support service-owned access patterns.
 
-Examples:
+Catalogue examples:
 
 ```text
 products(status, category_id)
-basket_items(basket_id)
-orders(customer_id, created_at)
-orders(idempotency_key)
-stock_levels(product_id, variant_id, warehouse_id)
-stock_reservations(idempotency_key)
-payments(order_id)
-payments(idempotency_key)
-shipments(order_id)
-notifications(event_id)
-processed_events(event_id)
+products(category_id, status)
+product_variants(product_id)
+product_attribute_definitions(category_id, code)
+product_attribute_values(product_id)
+product_attribute_values(attribute_id)
 ```
 
-Indexing should be reviewed after real query patterns emerge.
-
-Avoid adding indexes speculatively without a known access pattern.
+Search/filter-heavy queries should generally be served by Search Service rather than complex Catalogue Service joins.
 
 ---
 
-## 26. Audit and Status History
+## 28. Audit and Status History
 
 Important lifecycle entities should keep history.
 
@@ -993,28 +920,23 @@ order_status_history
 payment_status_history
 shipment_status_history
 stock_adjustments
+product_price_history
+product_status_history
 notification_attempts
-```
-
-History tables support:
-
-```text
-debugging
-auditability
-incident response
-customer support
-reconciliation
 ```
 
 ---
 
-## 27. Local Development Seed Data
+## 29. Local Development Seed Data
 
 Local seed data should support:
 
 ```text
 active products
 inactive products
+curtains with curtain-specific attributes
+bed frames with bed-specific attributes
+rugs with rug-specific attributes
 stocked products
 out-of-stock products
 test baskets
@@ -1028,7 +950,7 @@ Seed data must not contain real personal data.
 
 ---
 
-## 28. Security and Privacy
+## 30. Security and Privacy
 
 Database design must protect sensitive data.
 
@@ -1042,38 +964,31 @@ payment provider references
 notification recipient details
 ```
 
-Rules:
-
-```text
-do not store raw payment card data
-do not store secrets in tables unnecessarily
-avoid logging sensitive fields
-minimise PII duplication
-protect database users with least privilege
-```
+Catalogue product attributes are usually not sensitive, but supplier-only fields, cost prices, margin data, and unpublished commercial details should not be exposed through customer-facing APIs or search projections.
 
 ---
 
-## 29. Initial Checkout Data Flow
+## 31. Initial Checkout Data Flow
 
 Successful checkout data flow:
 
 ```text
-1. Basket Service owns basket and basket items.
-2. Order Service retrieves basket through API.
-3. Inventory Service creates stock reservation.
-4. Payment Service records payment authorisation.
-5. Shipping Service records shipment.
-6. Order Service records order and order items.
-7. Order Service publishes OrderCreated.
-8. Notification Service records notification attempt.
+1. Catalogue Service owns product and category-scoped attribute truth.
+2. Basket Service owns basket and basket items.
+3. Order Service retrieves basket through API.
+4. Inventory Service creates stock reservation.
+5. Payment Service records payment authorisation.
+6. Shipping Service records shipment.
+7. Order Service records order and order item snapshots.
+8. Order Service publishes OrderCreated.
+9. Notification Service records notification attempt.
 ```
 
 Each service writes only to its own schema.
 
 ---
 
-## 30. Anti-Patterns to Avoid
+## 32. Anti-Patterns to Avoid
 
 Avoid:
 
@@ -1083,15 +998,16 @@ cross-service joins
 foreign keys across service schemas
 shared ORM models
 using database tables as integration contracts
+one giant products table with hundreds of nullable type-specific columns
+uncontrolled JSON product blobs with no attribute governance
 storing raw payment data
-unbounded JSON blobs for core relational data
 projections becoming hidden source of truth
 one service running another service's migrations
 ```
 
 ---
 
-## 31. Initial Implementation Checklist
+## 33. Initial Implementation Checklist
 
 Before implementing a service schema, confirm:
 
@@ -1109,25 +1025,33 @@ Are event outbox needs considered?
 Are tests planned for repository behaviour?
 ```
 
+For Catalogue Service, also confirm:
+
+```text
+Are variable product characteristics modelled as category-scoped attributes?
+Are filterable attributes identified?
+Are required attributes defined per category?
+Are controlled values represented where needed?
+Will Search Service receive enough data to build browse/filter projections?
+```
+
 ---
 
-## 32. Open Questions
+## 34. Open Questions
 
 | Question | Status |
 |---|---|
 | Which ID format will be standard across services? | To decide |
-| Should outbox be implemented from the first service release? | Proposed for `order-service` |
+| Should outbox be implemented from the first service release? | Proposed for `order-service`; later for catalogue |
 | Should order address snapshots be JSON or structured columns? | To decide |
-| Should price history be stored from version one? | To decide |
-| Should local development create all schemas upfront or only active service schemas? | To decide |
+| Should selected product attributes be snapshotted into order items? | Proposed |
+| Should product attributes support variant-level values in version one? | To decide |
+| Should catalogue attribute options be a separate table or JSON field first? | To decide |
 | Should search use MySQL projection initially or external search later? | To decide |
-| How long should idempotency records be retained? | To decide |
 
 ---
 
-## 33. Related Documents
-
-This document should be read alongside:
+## 35. Related Documents
 
 ```text
 docs/data/data-ownership.md
@@ -1135,9 +1059,9 @@ docs/data/mysql-standards.md
 docs/data/migrations.md
 docs/events/event-catalog.md
 docs/events/event-envelope.md
+docs/architecture/domain-model.md
 docs/architecture/service-boundaries.md
 docs/architecture/communication-patterns.md
-docs/architecture/resilience-patterns.md
 docs/testing/testing-strategy.md
 ```
 
@@ -1151,21 +1075,12 @@ adr/0003-use-kafka-for-events.md
 
 ---
 
-## 34. Summary
+## 36. Summary
 
 bfstore’s service database design supports clear microservice ownership by giving each service its own schema, migrations, database user, and data model.
 
-The most important rules are:
+The Catalogue Service remains on MySQL as the governed product source of truth, but supports varied product types through category-scoped attribute definitions and values.
 
-```text
-each service owns its own schema
-no cross-service database access
-no cross-service joins
-cross-service references are IDs only
-snapshots are allowed for history
-projections are allowed for optimised reads
-transactions stay inside one service boundary
-outbox should be considered for reliable event publishing
-```
+Search Service owns a denormalised product projection optimised for browse, filtering, and faceted search.
 
-This design provides a professional foundation for reliable, secure, and maintainable service-owned persistence.
+This separates catalogue governance from search performance without prematurely moving the product source of truth to NoSQL.
