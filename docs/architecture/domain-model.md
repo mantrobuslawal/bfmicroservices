@@ -1719,8 +1719,216 @@ erDiagram
 
     INVENTORY_ITEM ||--o{ STOCK_RESERVATION : reserved_by
 ```
+> [!NOTE]
+> This is a conceptual relationship diagram, not a physical database schema.
+
+---
+
+## 19. Domain Model to Service Mapping
+
+```
+auth-service
+    Identity
+    Credential
+    Session
+    Role
+    Permission
+
+customer-service
+    Customer
+    CustomerProfile
+    Address
+    CustomerPreference
+
+catalog-service
+    Product
+    ProductVariant
+    Category
+    ProductImage
+    ProductAttribute
+
+inventory-service
+    InventoryItem
+    Warehouse
+    StockReservation
+    StockAdjustment
+
+basket-service
+    Basket
+    BasketItem
+
+order-service
+    Order
+    OrderItem
+    OrderStatusHistory
+
+payment-service
+    Payment
+    PaymentAttempt
+    Refund
+
+shipping-service
+    Shipment
+    DeliveryOption
+    TrackingStatus
+
+notification-service
+    Notification
+    NotificationTemplate
+    NotificationDeliveryAttempt
+
+review-service
+    Review
+    RatingSummary
+    ModerationDecision
+
+search-service
+    SearchIndexEntry
+    SearchQueryLog
+    SearchFacet
+
+recommendation-service
+    Recommendation
+    RecommendationRule
+    RecommendationSignal
+```
+
+---
+
+## 20. Modelling Decisions and Trade-Offs
+
+### 20.1 Product Data Is Owned by Catalogue Service
+
+Product data is not duplicated as source-of-truth across the platform.
+
+Other services may store product IDs or product snapshots, but Catalogue Service remains the owner.
+
+Trade-off:
+
+avoids inconsistent product ownership
+requires APIs/events for other services to access product changes
+introduces eventual consistency for search and recommendation projections
+
+---
+
+### 20.2 Basket Does Not Reserve Stock
+
+Adding a product to a basket does not reserve stock.
+
+Stock is reserved during checkout.
+
+Trade-off:
+
+avoids stock being locked unnecessarily
+allows baskets to be lightweight
+means stock may become unavailable between basket creation and checkout
+
+---
+
+### 20.3 Order Stores Product and Address Snapshots
+
+Orders store key product and address details from the time of purchase.
+
+Trade-off:
+
+preserves historical accuracy
+duplicates some data intentionally
+requires clear distinction between source-of-truth and historical snapshots
 
 
+---
+
+### 20.4 Payment Is Separate from Order
+
+Payment Service owns payment state. Order Service owns order lifecycle.
+
+Trade-off:
+
+separates payment concerns from order logic
+improves auditability and security
+requires careful coordination during checkout
+
+---
+
+### 20.5 Search and Recommendations Use Projections
+
+Search and recommendations do not own the product catalogue.
+
+They consume events and maintain optimised read models.
+
+Trade-off:
+
+supports scalable reads and specialised query models
+introduces eventual consistency
+requires event replay and projection repair strategies
+
+---
+
+## 21. Open Questions
+
+| Question                                                                                       | Status    |
+| ---------------------------------------------------------------------------------------------- | --------- |
+| Will guest checkout be supported in the first implementation?                                  | To decide |
+| Should Basket Item store a price snapshot before checkout or only at order creation?           | To decide |
+| Should shipment creation block order confirmation or create a pending fulfilment state?        | To decide |
+| Should payment capture be modelled separately from payment authorisation in the first version? | To decide |
+| Should Product Variant be included in the first version or deferred?                           | To decide |
+| Should search initially use a MySQL-backed projection or a dedicated search engine later?      | To decide |
+| Should review eligibility require a completed order?                                           | To decide |
+| Should stock reservations be released immediately on payment failure or expire automatically?  | To decide |
+
+---
+
+## 22. Related Documents
+
+This document should be read alongside:
+
+```
+docs/requirements/product-vision.md
+docs/requirements/scope.md
+docs/requirements/user-journeys.md
+docs/requirements/business-rules.md
+docs/architecture/service-boundaries.md
+docs/architecture/communication-patterns.md
+docs/architecture/event-driven-design.md
+docs/data/data-ownership.md
+docs/data/service-database-design.md
+docs/events/event-catalog.md
+```
+
+---
+
+## 23. Summary
+
+The bfstore domain model is centred around a realistic online furniture shopping journey:
+
+```
+Customer
+    browses Product
+    adds Product to Basket
+    checks out Basket
+    creates Order
+    reserves Stock
+    authorises Payment
+    creates Shipment
+    receives Notification
+```
+
+The key architectural rule is clear ownership:
+
+```
+catalog-service owns products
+inventory-service owns stock
+basket-service owns baskets
+order-service owns orders
+payment-service owns payments
+shipping-service owns shipments
+notification-service owns notifications
+```
+
+Other services may consume events, call APIs, or maintain projections, but they must not take ownership of another service’s core business data.
+
+This domain model provides the foundation for service boundaries, protobuf contracts, Kafka events, database design, testing, and operational documentation.
 
 
 
