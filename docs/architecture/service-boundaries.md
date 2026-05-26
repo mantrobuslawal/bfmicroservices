@@ -1176,6 +1176,92 @@ Real email/SMS provider integration is out of scope initially; simulation is acc
 
 ---
 
+### 6.10 Notification Service
+
+### Purpose
+
+The notification-service owns customer-facing notifications and delivery status.
+
+It answers:
+
+```
+Was a notification requested?
+Was it sent?
+Did it fail?
+Should it be retried?
+```
+
+### Owns
+
+```
+notification requests
+notification templates
+notification delivery attempts
+notification status
+retry state
+provider references
+```
+
+### Does Not Own
+
+```
+order lifecycle
+payment state
+shipment state
+customer profile source of truth
+business decision to create an order
+```
+
+### Inbound APIs
+
+Potential gRPC APIs:
+
+```
+RequestNotification
+GetNotificationStatus
+```
+
+The initial version may primarily consume Kafka events rather than expose many synchronous APIs.
+
+```
+Events Published
+NotificationSent
+NotificationFailed
+NotificationRetryScheduled
+```
+
+### Events Consumed
+
+```
+OrderCreated
+OrderCancelled
+PaymentFailed
+ShipmentCreated
+ShipmentDispatched
+ShipmentDelivered
+NotificationRequested
+```
+
+### Data Owned
+
+```
+notifications
+notification_attempts
+notification_templates
+```
+
+### Boundary Rules
+
+Notification failure must not roll back order creation.
+Notification processing must be idempotent.
+Duplicate events should not cause duplicate customer messages where avoidable.
+Notification Service may request customer contact details, but Customer Service owns the profile.
+Real email/SMS provider integration is out of scope initially; simulation is acceptable.
+
+---
+
+
+
 
 
 
