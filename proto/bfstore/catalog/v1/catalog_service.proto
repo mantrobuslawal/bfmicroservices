@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package acme.catalog.v1;
+
+import "acme/catalog/v1/product.proto";
+import "acme/common/v1/pagination.proto";
+
+option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/catalog/v1;catalogv1";
+
+// CatalogService provides customer-facing catalogue read APIs.
+//
+// Catalogue Service owns product truth.
+// Search Service may later own denormalised browse/search projections.
+service CatalogService {
+  // ListProducts returns customer-visible products.
+  //
+  // By default, this should return ACTIVE products only.
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+
+  // GetProduct returns a single customer-visible product by ID.
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+
+  // ListCategories returns customer-visible product categories.
+  rpc ListCategories(ListCategoriesRequest) returns (ListCategoriesResponse);
+
+  // ListProductAttributeDefinitions returns category-scoped attribute
+  // definitions.
+  //
+  // This helps clients and Search Service understand which attributes are
+  // valid, required, or filterable for a category.
+  rpc ListProductAttributeDefinitions(ListProductAttributeDefinitionsRequest) returns (ListProductAttributeDefinitionsResponse);
+}
+
+// ListProductsRequest defines filters for product listing.
+//
+// Advanced keyword search, ranking, and faceted filtering should eventually
+// belong to Search Service.
+message ListProductsRequest {
+  acme.common.v1.PageRequest page = 1;
+
+  // Optional category filter.
+  string category_id = 2;
+
+  // When false or omitted, only active customer-visible products should be
+  // returned.
+  bool include_inactive = 3;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  acme.common.v1.PageResponse page = 2;
+}
+
+message GetProductRequest {
+  string product_id = 1;
+}
+
+message GetProductResponse {
+  Product product = 1;
+}
+
+message ListCategoriesRequest {
+  acme.common.v1.PageRequest page = 1;
+
+  // Optional parent category filter.
+  string parent_category_id = 2;
+
+  // When false or omitted, only active customer-visible categories should be
+  // returned.
+  bool include_inactive = 3;
+}
+
+message ListCategoriesResponse {
+  repeated Category categories = 1;
+  acme.common.v1.PageResponse page = 2;
+}
+
+message ListProductAttributeDefinitionsRequest {
+  acme.common.v1.PageRequest page = 1;
+
+  // Required category ID.
+  string category_id = 2;
+
+  // When true, return only attributes that should be available as customer
+  // filters in search/browse experiences.
+  bool filterable_only = 3;
+
+  // When false or omitted, only active definitions should be returned.
+  bool include_inactive = 4;
+}
+
+message ListProductAttributeDefinitionsResponse {
+  repeated ProductAttributeDefinition attribute_definitions = 1;
+  acme.common.v1.PageResponse page = 2;
+}

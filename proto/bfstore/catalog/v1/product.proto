@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package acme.catalog.v1;
+
+import "acme/common/v1/money.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/catalog/v1;catalogv1";
+
+// ProductStatus defines the lifecycle state of a catalogue product.
+enum ProductStatus {
+  PRODUCT_STATUS_UNSPECIFIED = 0;
+
+  // Product is being prepared and is not customer-visible.
+  PRODUCT_STATUS_DRAFT = 1;
+
+  // Product is visible and purchasable, subject to stock availability.
+  PRODUCT_STATUS_ACTIVE = 2;
+
+  // Product is not currently purchasable.
+  PRODUCT_STATUS_INACTIVE = 3;
+
+  // Product is retained for history but no longer part of the normal catalogue.
+  PRODUCT_STATUS_ARCHIVED = 4;
+}
+
+// ProductAttributeDataType defines the supported value type for a product
+// attribute definition.
+enum ProductAttributeDataType {
+  PRODUCT_ATTRIBUTE_DATA_TYPE_UNSPECIFIED = 0;
+  PRODUCT_ATTRIBUTE_DATA_TYPE_STRING = 1;
+  PRODUCT_ATTRIBUTE_DATA_TYPE_NUMBER = 2;
+  PRODUCT_ATTRIBUTE_DATA_TYPE_BOOLEAN = 3;
+  PRODUCT_ATTRIBUTE_DATA_TYPE_OPTION = 4;
+  PRODUCT_ATTRIBUTE_DATA_TYPE_MULTI_OPTION = 5;
+  PRODUCT_ATTRIBUTE_DATA_TYPE_JSON = 6;
+}
+
+// Category represents a product taxonomy node.
+//
+// Categories define which attribute definitions are relevant for a product.
+message Category {
+  string category_id = 1;
+  string parent_category_id = 2;
+  string name = 3;
+  string slug = 4;
+  string description = 5;
+  ProductStatus status = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+// Product represents governed product catalogue data.
+//
+// Catalogue Service is the source of truth for product identity, product
+// description, category taxonomy, product variants, product status, and
+// category-scoped product attribute values.
+//
+// Stock is owned by Inventory Service.
+// Search documents are owned by Search Service.
+message Product {
+  string product_id = 1;
+  string category_id = 2;
+  string name = 3;
+  string description = 4;
+  string brand = 5;
+  ProductStatus status = 6;
+  acme.common.v1.Money base_price = 7;
+  repeated ProductVariant variants = 8;
+  repeated ProductAttributeValue attributes = 9;
+  repeated ProductImage images = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+// ProductVariant represents a purchasable variation of a product.
+//
+// Examples:
+// - same wall tapestry in different sizes
+// - same desk lamp in different colours
+// - same bed frame in different sizes
+message ProductVariant {
+  string variant_id = 1;
+  string product_id = 2;
+  string sku = 3;
+  string variant_name = 4;
+  ProductStatus status = 5;
+  acme.common.v1.Money price = 6;
+  repeated ProductAttributeValue attributes = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+// ProductAttributeDefinition defines an attribute that is valid for a category.
+//
+// Examples:
+// - curtains.drop_cm
+// - bed-frames.bed_size
+// - secure-storage.security_rating
+// - wall-art.fabric_type
+message ProductAttributeDefinition {
+  string attribute_id = 1;
+  string category_id = 2;
+  string code = 3;
+  string display_name = 4;
+  string description = 5;
+  ProductAttributeDataType data_type = 6;
+  string unit = 7;
+  bool is_required = 8;
+  bool is_filterable = 9;
+  bool is_variant_defining = 10;
+  repeated ProductAttributeOption options = 11;
+  ProductStatus status = 12;
+}
+
+// ProductAttributeOption represents a controlled allowed value for an
+// attribute definition.
+message ProductAttributeOption {
+  string option_id = 1;
+  string value = 2;
+  string display_name = 3;
+  int32 display_order = 4;
+  ProductStatus status = 5;
+}
+
+// ProductAttributeValue represents a product-specific or variant-specific
+// value for a defined attribute.
+message ProductAttributeValue {
+  string attribute_id = 1;
+  string code = 2;
+  string display_name = 3;
+  ProductAttributeDataType data_type = 4;
+
+  oneof value {
+    string value_string = 5;
+    double value_number = 6;
+    bool value_boolean = 7;
+    string value_json = 8;
+  }
+
+  repeated string value_options = 9;
+  string unit = 10;
+}
+
+// ProductImage represents customer-facing catalogue imagery.
+message ProductImage {
+  string image_id = 1;
+  string product_id = 2;
+  string url = 3;
+  string alt_text = 4;
+  int32 display_order = 5;
+}
