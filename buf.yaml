@@ -1,0 +1,24 @@
+version: v2
+
+# bfstore Protobuf module configuration.
+#
+# This repository uses Protocol Buffers for:
+# - gRPC service APIs
+# - Kafka event payloads
+# - shared common value types
+#
+# Buf is used to enforce consistent linting, compatibility checks, and code generation.
+
+modules:
+  - path: proto
+
+lint:
+  use:
+    - STANDARD
+
+breaking:
+  use:
+    - FILE
+
+deps:
+  - buf.build/googleapis/googleapis
