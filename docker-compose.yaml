@@ -1,0 +1,107 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: bfstore-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-bfstore_root_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - bfstore_mysql_data:/var/lib/mysql
+      - ./db/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bfstore
+
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: bfstore-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_ENABLE_KRAFT: "yes"
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "29092:29092"
+    volumes:
+      - bfstore_kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - bfstore
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    container_name: bfstore-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -euo pipefail
+
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic bfstore.order.orders.v1 --partitions 3 --replication-factor 1
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic bfstore.inventory.stock.v1 --partitions 3 --replication-factor 1
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic bfstore.payment.payments.v1 --partitions 3 --replication-factor 1
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic bfstore.shipping.shipments.v1 --partitions 3 --replication-factor 1
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic bfstore.notification.notifications.v1 --partitions 3 --replication-factor 1
+        kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic bfstore.catalog.products.v1 --partitions 3 --replication-factor 1
+
+        echo "bfstore Kafka topics created."
+    networks:
+      - bfstore
+
+  # Application services will be added as implementation progresses.
+  #
+  # Example future service:
+  #
+  # catalog-service:
+  #   build:
+  #     context: .
+  #     dockerfile: services/catalog-service/Dockerfile
+  #   container_name: bfstore-catalog-service
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+  #     kafka:
+  #       condition: service_healthy
+  #   environment:
+  #     ENVIRONMENT: ${ENVIRONMENT:-local}
+  #     LOG_LEVEL: ${LOG_LEVEL:-debug}
+  #     MYSQL_HOST: mysql
+  #     MYSQL_PORT: 3306
+  #     MYSQL_DATABASE: ${CATALOG_DB_NAME:-bfstore_catalog}
+  #     MYSQL_USER: ${CATALOG_DB_USER:-bfstore_catalog_user}
+  #     MYSQL_PASSWORD: ${CATALOG_DB_PASSWORD:-bfstore_catalog_password}
+  #     KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  #   ports:
+  #     - "50051:50051"
+  #   networks:
+  #     - bfstore
+
+networks:
+  bfstore:
+    name: bfstore
+    driver: bridge
+
+volumes:
+  bfstore_mysql_data:
+  bfstore_kafka_data:
