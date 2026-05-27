@@ -1,220 +1,139 @@
-# `common/v1`
+# Common Protobuf Package
 
-## 1. Purpose
-
-This document describes the `common/v1` Protobuf package for bfstore.
-
-The package defines shared value types and metadata used across bfstore services.
-
-These contracts are client-visible engineering artefacts and should be treated as stable integration boundaries.
-
----
-
-## 2. Package Name
+## Package
 
 ```proto
 package acme.common.v1;
 ```
 
-Recommended Go package option:
+## Purpose
+
+This package contains Protobuf messages shared across bfstore services.
+
+Common messages should be small, stable, and broadly reusable.
+
+Examples:
+
+```text
+Money
+PageRequest
+PageResponse
+```
+
+Do not place service-specific business concepts in this package.
+
+---
+
+## Field Presence Convention
+
+bfstore uses proto3.
+
+Use `optional` for scalar fields only when the service must distinguish between:
+
+```text
+field omitted
+field explicitly set to the scalar default value
+field explicitly set to a non-default value
+```
+
+This is most useful for:
+
+```text
+patch requests
+partial update commands
+nullable scalar business values
+optional event context
+selected filter fields where absence has meaning
+```
+
+Do not use `optional` blindly for every scalar field.
+
+For normal response models and values required by validation, prefer plain scalar fields.
+
+Message fields already have presence in proto3.
+
+---
+
+## Money
+
+The `Money` message should represent monetary values using minor units.
+
+Recommended shape:
 
 ```proto
-option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/common/v1;commonv1";
+message Money {
+  int64 amount_minor = 1;
+  string currency_code = 2;
+}
 ```
 
----
-
-## 3. Ownership
-
-| Area | Owner |
-|---|---|
-| Package owner | `Shared API governance` |
-| Contract review | API governance / service owner |
-| Backward compatibility | Service owner |
-| Generated clients | Build/tooling pipeline |
-
-Ownership rule:
-
-> The service that owns the business capability owns the contract. Other services integrate through APIs and events, not database tables.
-
----
-
-## 4. Expected Files
+Example:
 
 ```text
-proto/acme/common/v1/
-├── README.md
-├── money.proto
-├── pagination.proto
-├── metadata.proto
-├── address.proto
-├── audit.proto
-├── errors.proto
+£45.99 = amount_minor: 4599, currency_code: "GBP"
 ```
 
-Event contracts may later move to a dedicated package such as:
+### Money field presence
 
-```text
-proto/acme/<domain>/events/v1/
-```
+`Money` is a message type, so proto3 already supports presence for the field itself when used inside another message.
 
-if that separation improves clarity.
-
----
-
-## 5. Primary Service Contract
-
-This package contains shared messages and does not define a business service.
-
----
-
-## 6. Core Message Types
-
-Recommended message types:
-
-- `Money`
-- `PageRequest`
-- `PageResponse`
-- `RequestMetadata`
-- `Address`
-- `AuditMetadata`
-
-These messages should describe business concepts and API contracts, not database rows.
-
----
-
----
-
-## 7. Contract Rules
-
-- Keep this package small and stable.
-- Do not place service-specific business models in common.
-- Use minor units for money and a three-letter currency code.
-- Prefer gRPC metadata for auth tokens, trace context, and correlation context where appropriate.
-- Removed fields must be reserved.
-
----
-
-## 8. Event Contracts
-
-Expected or potential events:
-
-This package should not define domain events.
-
-Event rules:
-
-```text
-events describe facts that have already happened
-events must include the standard event envelope
-events must be versioned
-events must carry correlation context
-consumers must be idempotent
-```
-
----
-
-## 9. Error Behaviour
-
-Expected error behaviour:
-
-- Not applicable for shared value types.
-
-All gRPC errors should follow:
-
-```text
-docs/api/error-model.md
-```
-
----
-
-## 10. Versioning
-
-This package is versioned as `v1`.
-
-Compatible changes include:
-
-```text
-adding optional fields
-adding new messages
-adding new RPCs
-adding new event types
-adding comments
-```
-
-Breaking changes include:
-
-```text
-renaming services or RPCs
-renaming packages
-removing fields
-renumbering fields
-changing field types
-changing field meaning
-changing idempotency behaviour
-changing error semantics
-```
-
-Breaking changes require a new package version, such as:
+For example:
 
 ```proto
-package acme.common.v2;
+message Product {
+  Money base_price = 1;
+}
 ```
 
-Removed fields must be reserved.
+The service can distinguish whether `base_price` was set.
+
+Inside `Money`, keep `amount_minor` and `currency_code` as plain scalar fields because a valid `Money` value should always include both values and be validated by application logic.
 
 ---
 
-## 11. Security and Privacy
+## Pagination
 
-Contracts must avoid unnecessary sensitive data.
+Pagination messages should use plain scalar fields unless presence has a specific meaning.
 
-Do not expose:
+Recommended shape:
+
+```proto
+message PageRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message PageResponse {
+  string next_page_token = 1;
+  int32 total_size = 2;
+}
+```
+
+For many APIs, an omitted or empty `page_token` naturally means "first page".
+
+A zero `page_size` can mean "use service default", but this should be documented and validated by the service.
+
+---
+
+## Validation
+
+Protobuf does not enforce required fields in proto3.
+
+Services must validate required-by-convention fields.
+
+Examples:
 
 ```text
-passwords
-tokens
-raw payment card data
-secret values
-internal stack traces
-internal database IDs
-unnecessary customer PII
-```
-
-Prefer opaque IDs and service-owned lookups where sensitive details are required.
-
----
-
-## 12. Testing Expectations
-
-This package should be covered by:
-
-```text
-buf lint
-buf breaking
-protobuf generation checks
-gRPC contract tests
-event contract tests where events are defined
-integration tests for critical service behaviours
+currency_code must not be empty
+currency_code should be a valid ISO 4217 currency code
+amount_minor must satisfy business rules
+page_size must be within allowed limits
 ```
 
 ---
 
-## 13. Related Documents
+## Design Rule
 
-```text
-docs/api/protobuf-style-guide.md
-docs/api/error-model.md
-docs/api/versioning.md
-docs/architecture/communication-patterns.md
-docs/architecture/service-boundaries.md
-docs/events/event-catalog.md
-docs/testing/testing-strategy.md
-```
+Keep this package boring and stable.
 
----
-
-## 14. Summary
-
-The `acme.common.v1` package is part of bfstore's contract-first service design.
-
-It should remain business-focused, versioned, testable, and aligned with the owning service boundary.
+Common types should not import service-specific packages or create hidden coupling between services.
