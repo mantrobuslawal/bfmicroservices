@@ -5,26 +5,25 @@ import (
 
 	"github.com/acme-ltd/bfstore/services/catalog-service/internal/catalog"
 	"google.golang.org/grpc"
+
+	// TODO:
+	// Uncomment after generated Protobuf code is committed.
+	//
+	// catalogv1 "github.com/acme-ltd/bfstore/gen/go/acme/catalog/v1"
 )
 
 // NewServer creates the Catalogue Service gRPC server.
-//
-// Protobuf-generated service registration should be added once generated code
-// is present in the repository.
 func NewServer(catalogService *catalog.Service, logger *slog.Logger) *grpc.Server {
 	server := grpc.NewServer()
 
-	// TODO:
-	// Register generated Catalogue Service handler after running buf generate.
-	//
-	// Example:
-	// catalogv1.RegisterCatalogServiceServer(
-	//   server,
-	//   NewCatalogHandler(catalogService, logger),
-	// )
+	handler := NewCatalogHandler(catalogService, logger)
 
-	_ = catalogService
-	_ = logger
+	// TODO:
+	// Register the generated Catalogue Service handler after running buf generate.
+	//
+	// catalogv1.RegisterCatalogServiceServer(server, handler)
+
+	_ = handler
 
 	return server
 }
