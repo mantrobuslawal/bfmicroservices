@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package acme.order.events.v1;
+
+import "acme/common/v1/money.proto";
+import "acme/events/v1/event_metadata.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/order/events/v1;ordereventsv1";
+
+// OrderCreatedEvent is published when an order has been successfully created.
+//
+// Producer:
+// - order-service
+//
+// Topic:
+// - bfstore.order.orders.v1
+//
+// Recommended Kafka key:
+// - order_id
+//
+// Consumers:
+// - notification-service
+// - recommendation-service later
+// - analytics/reporting later
+message OrderCreatedEvent {
+  acme.events.v1.EventMetadata metadata = 1;
+  OrderCreated payload = 2;
+}
+
+// OrderCreated is the domain payload for a successfully created order.
+message OrderCreated {
+  string order_id = 1;
+  string order_number = 2;
+  string customer_id = 3;
+  string basket_id = 4;
+  acme.common.v1.Money total_amount = 5;
+  repeated OrderItemSnapshot items = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// OrderItemSnapshot captures the product and price information at checkout
+// time.
+//
+// This is a snapshot, not live catalogue truth.
+message OrderItemSnapshot {
+  string order_item_id = 1;
+  string product_id = 2;
+  string variant_id = 3;
+  string sku_snapshot = 4;
+  string product_name_snapshot = 5;
+  acme.common.v1.Money unit_price = 6;
+  int32 quantity = 7;
+  acme.common.v1.Money line_total = 8;
+
+  // Customer-relevant selected attributes at checkout time.
+  //
+  // Examples:
+  // - bed_size: king
+  // - fabric_type: woven
+  // - security_rating: super_secure
+  //
+  // This should not become the source of truth for catalogue attributes.
+  repeated SelectedProductAttributeSnapshot selected_attributes = 9;
+}
+
+// SelectedProductAttributeSnapshot captures selected catalogue attributes for
+// historical order display.
+message SelectedProductAttributeSnapshot {
+  string code = 1;
+  string display_name = 2;
+  string value = 3;
+  string unit = 4;
+}
+
+// OrderFailedEvent is published when an attempted checkout fails before an
+// order can be confirmed.
+//
+// Producer:
+// - order-service
+//
+// Topic:
+// - bfstore.order.orders.v1
+//
+// Recommended Kafka key:
+// - checkout_attempt_id or order_id where available
+message OrderFailedEvent {
+  acme.events.v1.EventMetadata metadata = 1;
+  OrderFailed payload = 2;
+}
+
+// OrderFailed captures a failed checkout outcome.
+message OrderFailed {
+  string checkout_attempt_id = 1;
+  string customer_id = 2;
+  string basket_id = 3;
+  OrderFailureReason reason = 4;
+  string safe_message = 5;
+  google.protobuf.Timestamp failed_at = 6;
+}
+
+// OrderFailureReason describes safe, high-level checkout failure reasons.
+//
+// Do not use this enum for sensitive provider internals.
+enum OrderFailureReason {
+  ORDER_FAILURE_REASON_UNSPECIFIED = 0;
+  ORDER_FAILURE_REASON_EMPTY_BASKET = 1;
+  ORDER_FAILURE_REASON_PRODUCT_UNAVAILABLE = 2;
+  ORDER_FAILURE_REASON_INSUFFICIENT_STOCK = 3;
+  ORDER_FAILURE_REASON_PAYMENT_DECLINED = 4;
+  ORDER_FAILURE_REASON_PAYMENT_UNAVAILABLE = 5;
+  ORDER_FAILURE_REASON_SHIPMENT_CREATION_FAILED = 6;
+  ORDER_FAILURE_REASON_INTERNAL_ERROR = 7;
+}
