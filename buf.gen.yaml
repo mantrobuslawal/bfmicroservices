@@ -1,0 +1,26 @@
+version: v2
+
+# bfstore Protobuf generation configuration.
+#
+# Generated code should not be edited by hand.
+# Run:
+#
+#   buf generate
+#
+# Expected generated output:
+# - Go protobuf messages
+# - Go gRPC service stubs
+#
+# Additional plugins can be added later for validation, OpenAPI, documentation,
+# or other generated artefacts.
+
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: gen/go
+    opt:
+      - paths=source_relative
+
+  - remote: buf.build/grpc/go
+    out: gen/go
+    opt:
+      - paths=source_relative
