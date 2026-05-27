@@ -77,3 +77,19 @@ check: fmt tidy proto-lint test ## Run local quality checks
 .PHONY: clean
 clean: ## Remove generated build artefacts
 	rm -rf gen
+
+.PHONY: catalog-test
+catalog-test: ## Run Catalogue Service unit tests
+	cd services/catalog-service && go test ./...
+
+.PHONY: catalog-integration-test
+catalog-integration-test: ## Run Catalogue Service integration tests
+	cd services/catalog-service && BFSTORE_RUN_INTEGRATION_TESTS=true go test ./test/integration/...
+
+.PHONY: catalog-build
+catalog-build: ## Build Catalogue Service locally
+	cd services/catalog-service && go build -o bin/catalog-service ./cmd/catalog-service
+
+.PHONY: catalog-docker-build
+catalog-docker-build: ## Build Catalogue Service container image
+	docker build -f services/catalog-service/Dockerfile -t bfstore/catalog-service:local .
