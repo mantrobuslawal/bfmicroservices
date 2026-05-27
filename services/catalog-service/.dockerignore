@@ -1,0 +1,8 @@
+bin
+dist
+gen
+.tmp
+.coverage
+.env
+*.test
+.DS_Store
