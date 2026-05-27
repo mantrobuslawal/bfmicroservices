@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package acme.common.v1;
+
+option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/common/v1;commonv1";
+
+// PageRequest defines common pagination input for list APIs.
+//
+// Services should document their default and maximum page sizes.
+message PageRequest {
+  // Maximum number of records to return.
+  //
+  // Services should enforce a sensible upper bound.
+  int32 page_size = 1;
+
+  // Opaque continuation token returned by a previous response.
+  //
+  // Empty means the first page.
+  string page_token = 2;
+}
+
+// PageResponse defines common pagination metadata returned by list APIs.
+message PageResponse {
+  // Opaque continuation token for the next page.
+  //
+  // Empty means there are no more pages.
+  string next_page_token = 1;
+
+  // Optional total count where the service can provide it efficiently.
+  //
+  // Services may return 0 where total count is not available or deliberately
+  // not calculated.
+  int32 total_count = 2;
+}

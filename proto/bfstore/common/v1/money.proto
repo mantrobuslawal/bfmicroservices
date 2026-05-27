@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package acme.common.v1;
+
+option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/common/v1;commonv1";
+
+// Money represents a monetary value in minor units.
+//
+// Examples:
+// - GBP 12.99 is represented as amount_minor = 1299, currency_code = "GBP"
+// - USD 5.00 is represented as amount_minor = 500, currency_code = "USD"
+//
+// Floating point types must not be used for money because they can introduce
+// rounding errors in commerce workflows.
+message Money {
+  // The monetary amount in the smallest currency unit.
+  //
+  // For GBP this is pence.
+  // For USD this is cents.
+  int64 amount_minor = 1;
+
+  // Three-letter currency code.
+  //
+  // Examples:
+  // - GBP
+  // - USD
+  // - EUR
+  string currency_code = 2;
+}
