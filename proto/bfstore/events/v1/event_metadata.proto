@@ -1,73 +1,155 @@
-syntax = "proto3";
+# Event Metadata Protobuf Package
 
+## Package
+
+```proto
 package acme.events.v1;
+```
 
-import "google/protobuf/timestamp.proto";
+## Purpose
 
-option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/events/v1;eventsv1";
+This package contains shared event metadata used by bfstore Kafka event payloads.
 
-// EventMetadata contains standard metadata for bfstore Kafka events.
-//
-// bfstore uses Protocol Buffers for Kafka event payloads. Each event should
-// include this metadata, either directly or through a domain-specific event
-// wrapper.
-//
-// Kafka usage:
-// - message key: stable business identifier, such as order_id or product_id
-// - message value: Protobuf event message
-// - headers: lightweight routing/tracing metadata where useful
+bfstore serialises Kafka event payloads with Protocol Buffers.
+
+The metadata message should support:
+
+```text
+event identity
+event type and version
+producer identity
+aggregate subject
+correlation and causation context
+distributed tracing context
+idempotency context
+```
+
+---
+
+## Field Presence Convention
+
+bfstore uses proto3.
+
+Use plain scalar fields for metadata that every valid event must contain.
+
+Use `optional` for scalar context fields that may not always be available.
+
+---
+
+## Recommended EventMetadata Shape
+
+```proto
 message EventMetadata {
-  // Globally unique event identifier.
-  //
-  // Consumers should use this for deduplication where repeated processing
-  // would cause harmful side effects.
   string event_id = 1;
-
-  // Event type using a stable past-tense business name.
-  //
-  // Examples:
-  // - OrderCreated
-  // - ProductUpdated
-  // - PaymentAuthorised
   string event_type = 2;
-
-  // Event contract version.
-  //
-  // Example:
-  // - v1
   string event_version = 3;
-
-  // Time at which the business fact occurred.
   google.protobuf.Timestamp occurred_at = 4;
-
-  // Name of the service that produced the event.
-  //
-  // Examples:
-  // - order-service
-  // - catalog-service
   string producer = 5;
-
-  // Main business entity affected by the event.
-  //
-  // Examples:
-  // - order_id
-  // - product_id
-  // - payment_id
   string subject = 6;
 
-  // Correlation ID used to connect logs, traces, commands, and events.
-  string correlation_id = 7;
-
-  // Identifier of the command, event, or operation that caused this event.
-  string causation_id = 8;
-
-  // Trace identifier where available.
-  //
-  // Full W3C trace context should normally be propagated in Kafka headers, but
-  // this field provides a useful domain-level reference.
-  string trace_id = 9;
-
-  // Idempotency key associated with the command that produced this event,
-  // where applicable.
-  string idempotency_key = 10;
+  optional string correlation_id = 7;
+  optional string causation_id = 8;
+  optional string trace_id = 9;
+  optional string idempotency_key = 10;
 }
+```
+
+Required-by-validation fields:
+
+```text
+event_id
+event_type
+event_version
+occurred_at
+producer
+subject
+```
+
+Optional context fields:
+
+```text
+correlation_id
+causation_id
+trace_id
+idempotency_key
+```
+
+---
+
+## Why Optional Context Fields?
+
+Some producers may not always have all context values.
+
+For example:
+
+```text
+a scheduled job may not have an inbound correlation_id
+a backfill process may not have a causation_id
+a legacy integration may not provide trace context
+some events may not come from an idempotent command
+```
+
+Using `optional` allows consumers to distinguish between:
+
+```text
+context field absent
+context field present but empty
+context field present with value
+```
+
+Services should generally avoid publishing present-but-empty context fields.
+
+---
+
+## Kafka Headers and Metadata
+
+Kafka headers may also carry operational metadata such as:
+
+```text
+event_type
+event_version
+correlation_id
+traceparent
+content_type
+```
+
+The Protobuf event payload should still include durable business/event metadata.
+
+Kafka headers are useful for routing, tracing, and middleware.
+
+The Protobuf payload is the durable event contract.
+
+---
+
+## Validation
+
+Event producers must validate metadata before writing to the outbox or publishing to Kafka.
+
+Examples:
+
+```text
+event_id must be globally unique
+event_type must match the Protobuf event type
+event_version must be supported
+occurred_at must be set
+producer must identify the publishing service
+subject should identify the aggregate or business entity
+```
+
+Consumers should treat missing required metadata as a contract violation.
+
+---
+
+## Compatibility
+
+Follow Protobuf compatibility rules:
+
+```text
+never reuse field numbers
+reserve removed field numbers
+reserve removed field names
+add new fields compatibly
+use new event versions or topics for breaking semantic changes
+```
+
+Optional context fields may be added compatibly when older consumers can safely ignore them.
