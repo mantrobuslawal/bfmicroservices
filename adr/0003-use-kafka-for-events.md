@@ -1,4 +1,4 @@
-# ADR-0003: Use Kafka for Event-Driven Communication
+# ADR-0003: Use Kafka for Domain Events
 
 ## Status
 
@@ -10,184 +10,127 @@ Accepted
 
 ## Context
 
-bfstore needs asynchronous communication for workflows where downstream services react to business facts after they occur.
+bfstore needs asynchronous communication between services for facts that have already happened.
 
 Examples:
 
 ```text
-OrderCreated triggers notification
-ProductUpdated updates search projection
-ReviewApproved updates rating and recommendation signals
-ShipmentDispatched triggers customer notification
+OrderCreated
+StockReserved
+PaymentAuthorised
+ShipmentCreated
+NotificationSent
+ProductUpdated
 ```
 
-The producer should not need to know every downstream consumer.
+Synchronous gRPC calls are appropriate for commands and queries requiring an immediate response. Events are appropriate for decoupled follow-up work, projections, notifications, recommendations, analytics, and operational workflows.
+
+bfstore will use Protocol Buffers for Kafka event payloads to align event contracts with gRPC contracts.
+
+---
 
 ## Decision
 
-bfstore will use Kafka for asynchronous event-driven communication.
+bfstore will use Kafka for domain events.
 
-Services will publish domain events to Kafka topics when important business facts occur.
-
-## Drivers
-
-This decision supports:
+Kafka event payloads will be encoded using Protocol Buffers.
 
 ```text
-decoupled downstream processing
-multiple independent consumers
-event-driven projections
-notification workflows
-search indexing
-recommendation signals
-consumer lag and DLQ observability
-realistic platform engineering patterns
+Kafka key     = stable business identifier
+Kafka value   = Protobuf event message
+Kafka headers = lightweight metadata
 ```
+
+Recommended content type:
+
+```text
+application/x-protobuf
+```
+
+---
 
 ## Alternatives Considered
 
-### Option 1: Direct Synchronous Calls
+## Synchronous gRPC Only
 
-Benefits:
+Simpler, but too tightly couples asynchronous side effects and projections.
 
-```text
-simple to reason about initially
-immediate response from downstream service
-```
+## Kafka with JSON Events
 
-Costs:
+Readable and easy to inspect, but weaker type safety and less consistent with gRPC Protobuf contracts.
 
-```text
-tight coupling
-cascading failures
-producers must know consumers
-poor fit for non-critical side effects
-```
+## Kafka with Protobuf Events
 
-### Option 2: Job Queue
+Typed, generated, versioned, and compatible with Buf checks. Less human-readable, but stronger for contract-first service design.
 
-Benefits:
-
-```text
-simpler than Kafka for background work
-good for task processing
-```
-
-Costs:
-
-```text
-less suitable for multiple independent event consumers
-weaker event stream and replay story
-```
-
-### Option 3: Kafka
-
-Benefits:
-
-```text
-durable event streams
-multiple consumer groups
-good replay/projection model
-industry-relevant platform skill
-```
-
-Costs:
-
-```text
-operational complexity
-eventual consistency
-consumer idempotency required
-schema/versioning discipline required
-```
+---
 
 ## Consequences
 
-### Positive
+Positive:
 
 ```text
-Order Service can publish OrderCreated without calling every consumer
-Notification Service can process asynchronously
-Search and Recommendation can build projections from events
-Kafka consumer lag and DLQs provide operational signals
+services can publish facts without knowing all consumers
+Search Service can build product projections
+Notification Service can react to OrderCreated
+Recommendation Service can consume behavioural signals later
+events have strong typed contracts
+schema evolution can be tested in CI
 ```
 
-### Negative
+Negative:
 
 ```text
-eventual consistency must be understood and documented
-events require versioning and schema governance
+Kafka adds operational complexity
 consumers must be idempotent
-debugging requires strong observability
-Kafka adds local and platform complexity
+Protobuf payloads require decoding tools
+DLQ handling must preserve binary payloads safely
+versioning discipline is mandatory
 ```
+
+---
 
 ## Implementation Notes
 
-Initial Kafka topics should include:
+Initial topics:
 
 ```text
-bfstore.inventory.stock-events.v1
-bfstore.payment.payment-events.v1
-bfstore.shipping.shipment-events.v1
-bfstore.order.order-events.v1
-bfstore.notification.notification-events.v1
+bfstore.order.orders.v1
+bfstore.inventory.stock.v1
+bfstore.payment.payments.v1
+bfstore.shipping.shipments.v1
+bfstore.notification.notifications.v1
 ```
 
-Initial events should include:
+Recommended proto layout:
 
 ```text
-StockReserved
-StockReservationFailed
-PaymentAuthorised
-PaymentFailed
-ShipmentCreated
-ShipmentFailed
-OrderCreated
-OrderFailed
-NotificationSent
-NotificationFailed
+proto/acme/events/v1/event_metadata.proto
+proto/acme/order/events/v1/order_events.proto
+proto/acme/payment/events/v1/payment_events.proto
+proto/acme/inventory/events/v1/inventory_events.proto
+proto/acme/shipping/events/v1/shipping_events.proto
+proto/acme/notification/events/v1/notification_events.proto
+proto/acme/catalog/events/v1/catalog_events.proto
 ```
 
-## Event Rules
+---
 
-```text
-events describe facts, not commands
-event producers must own the business fact
-events must include an event envelope
-events must be versioned
-events must carry correlation context
-consumers must be idempotent
-poison events should go to DLQ after retry exhaustion
-```
+## Summary
 
-## Risks
+bfstore uses Kafka for domain events and Protobuf for event payloads. This gives the system a consistent contract-first model across both gRPC APIs and asynchronous event-driven communication.
 
-| Risk | Mitigation |
-|---|---|
-| Kafka used as RPC | Use gRPC when immediate response is required |
-| Event soup | Maintain event catalogue and topic design |
-| Duplicate processing | Implement idempotent consumers |
-| Lost events | Consider outbox pattern for critical producers |
-| Hard debugging | Use correlation IDs, logs, metrics, traces |
 
-## Review Triggers
-
-Revisit this decision if:
-
-```text
-Kafka complexity outweighs value for the implementation stage
-events are mostly used as request/response messages
-consumer lag and DLQs become unmanageable
-a simpler queue would satisfy the project goals
-```
+---
 
 ## Related Documents
 
 ```text
-docs/architecture/event-driven-design.md
-docs/events/event-catalog.md
+docs/api/protobuf-style-guide.md
+docs/api/versioning.md
 docs/events/event-envelope.md
+docs/events/event-catalog.md
 docs/events/kafka-topic-design.md
-docs/events/ordering-and-idempotency.md
-docs/events/retry-and-dlq-strategy.md
+adr/0003-use-kafka-for-events.md
+adr/0006-use-buf-for-protobuf.md
 ```
