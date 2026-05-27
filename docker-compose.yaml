@@ -18,6 +18,40 @@ services:
     networks:
       - bfstore
 
+  # It assumes the repository contains:
+#
+# - services/catalog-service/Dockerfile
+# - db/mysql-init/*
+# - generated Protobuf code
+#
+# The handler registration should be completed before expecting gRPC methods
+# to respond to client calls.
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+    container_name: bfstore-catalog-service
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${CATALOG_DB_NAME:-bfstore_catalog}
+      MYSQL_USER: ${CATALOG_DB_USER:-bfstore_catalog_user}
+      MYSQL_PASSWORD: ${CATALOG_DB_PASSWORD:-bfstore_catalog_password}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CATALOG_SERVICE_GRPC_PORT: ${CATALOG_SERVICE_GRPC_PORT:-50051}
+    ports:
+      - "${CATALOG_SERVICE_GRPC_PORT:-50051}:50051"
+    networks:
+      - bfstore
+
   kafka:
     image: bitnami/kafka:3.7
     container_name: bfstore-kafka
