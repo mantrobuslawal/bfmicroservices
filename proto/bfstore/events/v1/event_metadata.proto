@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package acme.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/events/v1;eventsv1";
+
+// EventMetadata contains standard metadata for bfstore Kafka events.
+//
+// bfstore uses Protocol Buffers for Kafka event payloads. Each event should
+// include this metadata, either directly or through a domain-specific event
+// wrapper.
+//
+// Kafka usage:
+// - message key: stable business identifier, such as order_id or product_id
+// - message value: Protobuf event message
+// - headers: lightweight routing/tracing metadata where useful
+message EventMetadata {
+  // Globally unique event identifier.
+  //
+  // Consumers should use this for deduplication where repeated processing
+  // would cause harmful side effects.
+  string event_id = 1;
+
+  // Event type using a stable past-tense business name.
+  //
+  // Examples:
+  // - OrderCreated
+  // - ProductUpdated
+  // - PaymentAuthorised
+  string event_type = 2;
+
+  // Event contract version.
+  //
+  // Example:
+  // - v1
+  string event_version = 3;
+
+  // Time at which the business fact occurred.
+  google.protobuf.Timestamp occurred_at = 4;
+
+  // Name of the service that produced the event.
+  //
+  // Examples:
+  // - order-service
+  // - catalog-service
+  string producer = 5;
+
+  // Main business entity affected by the event.
+  //
+  // Examples:
+  // - order_id
+  // - product_id
+  // - payment_id
+  string subject = 6;
+
+  // Correlation ID used to connect logs, traces, commands, and events.
+  string correlation_id = 7;
+
+  // Identifier of the command, event, or operation that caused this event.
+  string causation_id = 8;
+
+  // Trace identifier where available.
+  //
+  // Full W3C trace context should normally be propagated in Kafka headers, but
+  // this field provides a useful domain-level reference.
+  string trace_id = 9;
+
+  // Idempotency key associated with the command that produced this event,
+  // where applicable.
+  string idempotency_key = 10;
+}
