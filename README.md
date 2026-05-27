@@ -326,3 +326,9 @@ bfstore is not just a demo shop.
 It is a professional platform engineering portfolio project wrapped in a memorable, developer-themed ecommerce story.
 
 **Borough Furniture Store** gives the system a clear identity while still supporting serious engineering conversations about microservices, data ownership, events, testing, deployment, and operations.
+
+---
+
+## Licence
+
+This project is licensed under the Apache License 2.0. See [LICENSE](./LICENSE) for details.
