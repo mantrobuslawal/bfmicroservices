@@ -1,114 +1,163 @@
-syntax = "proto3";
+# Order Events Protobuf Package
 
+## Package
+
+```proto
 package acme.order.events.v1;
+```
 
-import "acme/common/v1/money.proto";
-import "acme/events/v1/event_metadata.proto";
-import "google/protobuf/timestamp.proto";
+## Purpose
 
-option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/order/events/v1;ordereventsv1";
+This package defines Kafka event payloads published by the bfstore Order Service.
 
-// OrderCreatedEvent is published when an order has been successfully created.
-//
-// Producer:
-// - order-service
-//
-// Topic:
-// - bfstore.order.orders.v1
-//
-// Recommended Kafka key:
-// - order_id
-//
-// Consumers:
-// - notification-service
-// - recommendation-service later
-// - analytics/reporting later
+Order events are facts that have already happened.
+
+Examples:
+
+```text
+OrderCreated
+OrderFailed
+OrderCancelled
+OrderCompleted
+```
+
+Events are serialised with Protocol Buffers and published to Kafka.
+
+---
+
+## Field Presence Convention
+
+bfstore uses proto3.
+
+For event facts, prefer plain scalar fields for values that should always be part of the event.
+
+Use `optional` only where a field is genuinely nullable, conditional, or contextual.
+
+Good optional candidates:
+
+```text
+failure_message
+discount_code
+customer_id for guest checkout
+promotion_id
+external_reference
+```
+
+Avoid using `optional` for core event facts that consumers should always receive.
+
+---
+
+## Recommended OrderCreated Pattern
+
+```proto
 message OrderCreatedEvent {
   acme.events.v1.EventMetadata metadata = 1;
-  OrderCreated payload = 2;
+  OrderCreated data = 2;
 }
 
-// OrderCreated is the domain payload for a successfully created order.
 message OrderCreated {
   string order_id = 1;
-  string order_number = 2;
-  string customer_id = 3;
-  string basket_id = 4;
-  acme.common.v1.Money total_amount = 5;
-  repeated OrderItemSnapshot items = 6;
-  google.protobuf.Timestamp created_at = 7;
+  string customer_id = 2;
+  repeated OrderItemSnapshot items = 3;
+  acme.common.v1.Money total = 4;
 }
+```
 
-// OrderItemSnapshot captures the product and price information at checkout
-// time.
-//
-// This is a snapshot, not live catalogue truth.
-message OrderItemSnapshot {
-  string order_item_id = 1;
-  string product_id = 2;
-  string variant_id = 3;
-  string sku_snapshot = 4;
-  string product_name_snapshot = 5;
-  acme.common.v1.Money unit_price = 6;
-  int32 quantity = 7;
-  acme.common.v1.Money line_total = 8;
+These fields are core facts of the event and should be populated by the producer.
 
-  // Customer-relevant selected attributes at checkout time.
-  //
-  // Examples:
-  // - bed_size: king
-  // - fabric_type: woven
-  // - security_rating: super_secure
-  //
-  // This should not become the source of truth for catalogue attributes.
-  repeated SelectedProductAttributeSnapshot selected_attributes = 9;
-}
+If bfstore supports guest checkout later, `customer_id` may become optional or be replaced with a richer customer/contact message.
 
-// SelectedProductAttributeSnapshot captures selected catalogue attributes for
-// historical order display.
-message SelectedProductAttributeSnapshot {
-  string code = 1;
-  string display_name = 2;
-  string value = 3;
-  string unit = 4;
-}
+---
 
-// OrderFailedEvent is published when an attempted checkout fails before an
-// order can be confirmed.
-//
-// Producer:
-// - order-service
-//
-// Topic:
-// - bfstore.order.orders.v1
-//
-// Recommended Kafka key:
-// - checkout_attempt_id or order_id where available
+## Recommended OrderFailed Pattern
+
+```proto
 message OrderFailedEvent {
   acme.events.v1.EventMetadata metadata = 1;
-  OrderFailed payload = 2;
+  OrderFailed data = 2;
 }
 
-// OrderFailed captures a failed checkout outcome.
 message OrderFailed {
-  string checkout_attempt_id = 1;
-  string customer_id = 2;
-  string basket_id = 3;
-  OrderFailureReason reason = 4;
-  string safe_message = 5;
-  google.protobuf.Timestamp failed_at = 6;
+  string order_id = 1;
+  OrderFailureReason reason = 2;
+  optional string failure_message = 3;
 }
+```
 
-// OrderFailureReason describes safe, high-level checkout failure reasons.
-//
-// Do not use this enum for sensitive provider internals.
+`failure_message` is optional because:
+
+```text
+not every failure has a safe human-readable message
+some failures should expose only a machine-readable reason
+some details may be sensitive or internal
+```
+
+---
+
+## Failure Reasons
+
+Enums should include an explicit zero value.
+
+Example:
+
+```proto
 enum OrderFailureReason {
   ORDER_FAILURE_REASON_UNSPECIFIED = 0;
-  ORDER_FAILURE_REASON_EMPTY_BASKET = 1;
-  ORDER_FAILURE_REASON_PRODUCT_UNAVAILABLE = 2;
-  ORDER_FAILURE_REASON_INSUFFICIENT_STOCK = 3;
-  ORDER_FAILURE_REASON_PAYMENT_DECLINED = 4;
-  ORDER_FAILURE_REASON_PAYMENT_UNAVAILABLE = 5;
-  ORDER_FAILURE_REASON_SHIPMENT_CREATION_FAILED = 6;
-  ORDER_FAILURE_REASON_INTERNAL_ERROR = 7;
+  ORDER_FAILURE_REASON_STOCK_RESERVATION_FAILED = 1;
+  ORDER_FAILURE_REASON_PAYMENT_AUTHORISATION_FAILED = 2;
+  ORDER_FAILURE_REASON_SHIPPING_CREATION_FAILED = 3;
 }
+```
+
+Do not treat the zero value as a valid business state.
+
+Services should validate that published failure events contain a meaningful non-zero reason.
+
+---
+
+## Optional Fields and Consumers
+
+Consumers must handle optional fields defensively.
+
+For example:
+
+```text
+Notification Service may use failure_message if present
+Analytics may group by reason regardless of failure_message
+Support tooling may show a fallback message when failure_message is absent
+```
+
+Do not design consumers that require optional detail fields to be present.
+
+---
+
+## Validation
+
+Order Service must validate event payloads before publishing.
+
+Examples:
+
+```text
+order_id must be present
+metadata must be present and valid
+OrderCreated must include at least one item
+OrderCreated total must be valid
+OrderFailed reason must be non-zero
+failure_message must not include sensitive internal details
+```
+
+---
+
+## Compatibility
+
+Follow Protobuf compatibility rules:
+
+```text
+never reuse field numbers
+reserve removed field numbers
+reserve removed field names
+add fields compatibly
+use new event versions for breaking semantic changes
+```
+
+Optional fields are useful for compatible additions when consumers can safely ignore them.
