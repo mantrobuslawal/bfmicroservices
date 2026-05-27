@@ -1,4 +1,4 @@
-# ADR-0006: Use Buf for Protobuf Tooling
+# ADR-0006: Use Buf for Protobuf Management
 
 ## Status
 
@@ -10,104 +10,60 @@ Accepted
 
 ## Context
 
-bfstore uses Protobuf for gRPC service contracts and Kafka event payload contracts.
-
-To keep contracts consistent, generated correctly, and safe to evolve, the project needs standard tooling for:
+bfstore uses Protocol Buffers for:
 
 ```text
-protobuf linting
-breaking-change detection
-code generation
-consistent style enforcement
-CI quality gates
+gRPC service APIs
+Kafka event payloads
+shared common messages
+event metadata
 ```
+
+The project needs consistent linting, code generation, and compatibility checks.
+
+---
 
 ## Decision
 
-bfstore will use Buf for Protobuf linting, breaking-change detection, and code generation.
+bfstore will use **Buf** to manage Protobuf definitions.
+
+Buf will be used for:
+
+```text
+linting
+breaking-change detection
+code generation
+contract governance
+```
+
+This applies to both gRPC API contracts and Kafka event payload contracts.
+
+---
 
 ## Drivers
 
-This decision supports:
-
 ```text
-contract-first development
-consistent protobuf style
-CI enforcement
-safe API evolution
-generated Go clients and servers
-client-facing professionalism
+contract-first service design
+consistent Protobuf style
+generated Go code
+safe schema evolution
+event compatibility checks
+CI quality gates
+developer workflow consistency
 ```
 
-## Alternatives Considered
-
-### Option 1: Raw protoc Scripts
-
-Benefits:
-
-```text
-simple in small projects
-direct use of standard compiler
-```
-
-Costs:
-
-```text
-more custom scripting
-less built-in linting
-harder breaking-change governance
-more inconsistent developer experience
-```
-
-### Option 2: Buf
-
-Benefits:
-
-```text
-standardised protobuf tooling
-linting
-breaking-change detection
-generation config
-good CI integration
-professional contract governance
-```
-
-Costs:
-
-```text
-additional tool to learn
-requires buf.yaml and buf.gen.yaml management
-```
-
-## Consequences
-
-### Positive
-
-```text
-protobuf contracts can be validated automatically
-breaking changes can fail CI
-generated code paths can be standardised
-API style can remain consistent across services
-```
-
-### Negative
-
-```text
-developers must install or use Buf through containers/scripts
-CI must be configured for Buf
-generated output must be managed carefully
-```
+---
 
 ## Implementation Notes
 
-Expected files:
+Recommended files:
 
 ```text
 buf.yaml
 buf.gen.yaml
 ```
 
-Expected commands:
+Recommended commands:
 
 ```sh
 buf lint
@@ -115,50 +71,53 @@ buf breaking
 buf generate
 ```
 
-Expected Makefile targets:
-
-```sh
-make proto-lint
-make proto-breaking
-make proto-generate
-make proto
-```
-
-## CI Expectations
-
-CI should fail when:
+Recommended proto layout:
 
 ```text
-protobuf lint rules fail
-breaking changes are introduced without a new version
-code generation fails
-generated files are out of date if committed
+proto/acme/common/v1/
+proto/acme/events/v1/
+proto/acme/catalog/v1/
+proto/acme/catalog/events/v1/
+proto/acme/order/v1/
+proto/acme/order/events/v1/
+proto/acme/payment/v1/
+proto/acme/payment/events/v1/
 ```
 
-## Risks
+---
 
-| Risk | Mitigation |
-|---|---|
-| Developers bypass Buf | Make Buf part of Makefile and CI |
-| Breaking-change baseline unclear | Document baseline strategy |
-| Generated code becomes inconsistent | Use single buf.gen.yaml |
-| Tooling slows early development | Start with simple rules and mature over time |
+## Event Contract Governance
 
-## Review Triggers
+Kafka event payloads are Protobuf contracts and should be treated as seriously as gRPC APIs.
 
-Revisit this decision if:
+Buf should check:
 
 ```text
-Buf does not support required workflow
-another schema registry/tooling approach becomes mandatory
-contract generation becomes too complex for repo structure
+event metadata messages
+domain event messages
+shared common types
+service API messages
 ```
+
+CI should fail when incompatible event changes are introduced without an intentional versioning plan.
+
+---
+
+## Summary
+
+bfstore uses Buf to manage Protobuf contracts for both gRPC APIs and Kafka event payloads. This strengthens the project’s contract-first architecture.
+
+
+---
 
 ## Related Documents
 
 ```text
 docs/api/protobuf-style-guide.md
 docs/api/versioning.md
-docs/api/grpc-overview.md
 docs/events/event-envelope.md
+docs/events/event-catalog.md
+docs/events/kafka-topic-design.md
+adr/0003-use-kafka-for-events.md
+adr/0006-use-buf-for-protobuf.md
 ```
