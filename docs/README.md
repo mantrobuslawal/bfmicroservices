@@ -86,7 +86,9 @@ Requirements
 
 ---
 
+## Development Standards
 
+- [Go Code Quality Tooling](./development/go-code-quality-tooling.md)
 
 
 
