@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/acme-ltd/bfstore/services/catalog-service/internal/catalog"
-	"github.com/acme-ltd/bfstore/services/catalog-service/internal/config"
-	"github.com/acme-ltd/bfstore/services/catalog-service/internal/database"
-	cataloggrpc "github.com/acme-ltd/bfstore/services/catalog-service/internal/grpc"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/database"
+	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpc"
 )
 
 func main() {

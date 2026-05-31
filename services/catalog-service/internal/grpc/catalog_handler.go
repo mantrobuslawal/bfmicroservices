@@ -103,18 +103,3 @@ func grpcError(logger *slog.Logger, publicMessage string, err error) error {
 }
 
 
-/*  TODO: REMOVE
-   compileSafeHandlerCheck keeps imports meaningful until generated handlers are wired.
-func compileSafeHandlerCheck(ctx context.Context, h *CatalogHandler) error {
-	if h == nil || h.catalogService == nil {
-		return status.Error(codes.FailedPrecondition, "catalog handler is not configured")
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return nil
-	}
-}
-*/
