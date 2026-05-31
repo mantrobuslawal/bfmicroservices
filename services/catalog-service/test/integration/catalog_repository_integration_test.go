@@ -8,7 +8,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/acme-ltd/bfstore/services/catalog-service/internal/catalog"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
 )
 
 // These tests are intended to run against the local MySQL database started by:
