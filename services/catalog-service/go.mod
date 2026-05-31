@@ -1,4 +1,4 @@
-module github.com/acme-ltd/bfstore/services/catalog-service
+module github.com/mantrobuslawal/bfstore/services/catalog-service
 
 go 1.22
 
