@@ -5,14 +5,11 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/acme-ltd/bfstore/services/catalog-service/internal/catalog"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	// TODO:
-	// Uncomment after generated Protobuf code is committed.
-	//
-	// catalogv1 "github.com/acme-ltd/bfstore/gen/go/acme/catalog/v1"
+	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1"
 )
 
 // CatalogHandler will implement the generated Catalogue Service gRPC interface.
@@ -27,7 +24,7 @@ import (
 //   GetProduct
 //   ListCategories
 type CatalogHandler struct {
-	// catalogv1.UnimplementedCatalogServiceServer
+	catalogv1.UnimplementedCatalogServiceServer
 
 	catalogService *catalog.Service
 	logger         *slog.Logger
