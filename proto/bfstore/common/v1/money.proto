@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package acme.common.v1;
+package bfstore.common.v1;
 
-option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/common/v1;commonv1";
+option go_package = "github.com/mantrobuslawal/bfstore/gen/go/bfstore/common/v1;commonv1";
 
 // Money represents a monetary value in minor units.
 //
