@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package acme.catalog.v1;
+package bfstore.catalog.v1;
 
 import "bfstore/catalog/v1/product.proto";
 import "bfstore/common/v1/pagination.proto";

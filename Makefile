@@ -93,3 +93,7 @@ catalog-build: ## Build Catalogue Service locally
 .PHONY: catalog-docker-build
 catalog-docker-build: ## Build Catalogue Service container image
 	docker build -f services/catalog-service/Dockerfile -t bfstore/catalog-service:local .
+
+.PHONY: proto-generate-catalog
+proto-generate-catalog: ## Generate Go code for Catalogue Protobuf contracts only
+	buf generate --path proto/bfstore/catalog/v1
