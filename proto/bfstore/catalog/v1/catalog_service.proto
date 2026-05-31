@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package acme.catalog.v1;
 
-import "acme/catalog/v1/product.proto";
-import "acme/common/v1/pagination.proto";
+import "bfstore/catalog/v1/product.proto";
+import "bfstore/common/v1/pagination.proto";
 
-option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/catalog/v1;catalogv1";
+option go_package = "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1;catalogv1";
 
 // CatalogService provides customer-facing catalogue read APIs.
 //
@@ -36,7 +36,7 @@ service CatalogService {
 // Advanced keyword search, ranking, and faceted filtering should eventually
 // belong to Search Service.
 message ListProductsRequest {
-  acme.common.v1.PageRequest page = 1;
+  bfstore.common.v1.PageRequest page = 1;
 
   // Optional category filter.
   string category_id = 2;
@@ -48,7 +48,7 @@ message ListProductsRequest {
 
 message ListProductsResponse {
   repeated Product products = 1;
-  acme.common.v1.PageResponse page = 2;
+  bfstore.common.v1.PageResponse page = 2;
 }
 
 message GetProductRequest {
@@ -60,7 +60,7 @@ message GetProductResponse {
 }
 
 message ListCategoriesRequest {
-  acme.common.v1.PageRequest page = 1;
+  bfstore.common.v1.PageRequest page = 1;
 
   // Optional parent category filter.
   string parent_category_id = 2;
@@ -72,11 +72,11 @@ message ListCategoriesRequest {
 
 message ListCategoriesResponse {
   repeated Category categories = 1;
-  acme.common.v1.PageResponse page = 2;
+  bfstore.common.v1.PageResponse page = 2;
 }
 
 message ListProductAttributeDefinitionsRequest {
-  acme.common.v1.PageRequest page = 1;
+  bfstore.common.v1.PageRequest page = 1;
 
   // Required category ID.
   string category_id = 2;
@@ -91,5 +91,5 @@ message ListProductAttributeDefinitionsRequest {
 
 message ListProductAttributeDefinitionsResponse {
   repeated ProductAttributeDefinition attribute_definitions = 1;
-  acme.common.v1.PageResponse page = 2;
+  bfstore.common.v1.PageResponse page = 2;
 }
