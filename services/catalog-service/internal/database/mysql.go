@@ -7,7 +7,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/acme-ltd/bfstore/services/catalog-service/internal/config"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 )
 
 // Open creates a MySQL database handle.
