@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package acme.catalog.v1;
+package bfstore.catalog.v1;
 
-import "acme/common/v1/money.proto";
+import "bfstore/common/v1/money.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/acme-ltd/bfstore/gen/go/acme/catalog/v1;catalogv1";
+option go_package = "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1;catalogv1";
 
 // ProductStatus defines the lifecycle state of a catalogue product.
 enum ProductStatus {
@@ -65,7 +65,7 @@ message Product {
   string description = 4;
   string brand = 5;
   ProductStatus status = 6;
-  acme.common.v1.Money base_price = 7;
+  bfstore.common.v1.Money base_price = 7;
   repeated ProductVariant variants = 8;
   repeated ProductAttributeValue attributes = 9;
   repeated ProductImage images = 10;
@@ -85,7 +85,7 @@ message ProductVariant {
   string sku = 3;
   string variant_name = 4;
   ProductStatus status = 5;
-  acme.common.v1.Money price = 6;
+  bfstore.common.v1.Money price = 6;
   repeated ProductAttributeValue attributes = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
