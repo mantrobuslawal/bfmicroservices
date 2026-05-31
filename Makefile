@@ -14,7 +14,7 @@
 SHELL := /bin/bash
 
 PROJECT_NAME := bfstore
-COMPOSE_FILE := docker-compose.yml
+COMPOSE_FILE := docker-compose.yaml
 
 .PHONY: help
 help: ## Show available commands
