@@ -1,10 +1,8 @@
 package grpc
 
 import (
-	"time"
-
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
-	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bftsore/catalog/v1"
+	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1"
 	commonv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/common/v1"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
