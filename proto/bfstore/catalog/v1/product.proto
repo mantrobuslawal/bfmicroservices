@@ -71,6 +71,7 @@ message Product {
   repeated ProductImage images = 10;
   google.protobuf.Timestamp created_at = 11;
   google.protobuf.Timestamp updated_at = 12;
+  string slug = 13;
 }
 
 // ProductVariant represents a purchasable variation of a product.
