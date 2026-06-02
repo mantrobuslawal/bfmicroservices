@@ -48,3 +48,15 @@ func (s *Service) ListCategories(ctx context.Context, filter ListCategoriesFilte
 
 	return categories, nil
 }
+
+// ListProductAttributeDefinitions returns catalogue product attribute definitions.
+func (s *Service) ListProductAttributeDefinitions(ctx context.Context, 
+						  filter ListProductAttributeDefinitionsFilter) 
+						  ([]AttributeDefinition, error) {
+	attributeDefinitions, err := s.repository.ListProductProductAttributeDefinitions(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("list product attribute definitions: %w", err)
+	}
+
+	return attributeDefinitions, nil
+}

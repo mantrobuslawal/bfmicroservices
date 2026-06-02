@@ -12,8 +12,13 @@ var ErrNotFound = errors.New("catalogue record not found")
 // Repository defines Catalogue Service persistence behaviour.
 type Repository interface {
 	ListProducts(ctx context.Context, filter ListProductsFilter) ([]Product, error)
+
 	GetProduct(ctx context.Context, productID string) (Product, error)
+	
 	ListCategories(ctx context.Context, filter ListCategoriesFilter) ([]Category, error)
+	
+	ListProductAttributeDefinitions(ctx context.Context, filter ListProductAttributeDefinitionsFilter)
+	 ([]ProductAttributeDefinition, error)
 }
 
 // MySQLRepository implements Repository using MySQL.
@@ -24,6 +29,77 @@ type MySQLRepository struct {
 // NewMySQLRepository creates a MySQL-backed catalogue repository.
 func NewMySQLRepository(db *sql.DB) *MySQLRepository {
 	return &MySQLRepository{db: db}
+}
+
+
+// ListProductAttributeDefinitons returns product attribute definitions
+// from the catalogue database.
+func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, filter ListProductAttributeDefinitionsFilter) 
+			  ([] ProductAttributeDefinition, error) {
+	query := `
+SELECT
+  attribute_id,
+  category_id,
+  code,
+  display_name,
+  COALESCE(description, ''),
+  data_type,
+  unit,
+  is_required,
+  is_filterable,
+  is_variant_defining,
+  status,
+  created_at,
+  updated_at
+FROM product_attribute_definitions
+WHERE (category_id = ?)
+  AND (? = TRUE OR is_filterable = FALSE)
+  AND (? = TRUE OR status = 'active') 
+ORDER BY created_at DESC`
+
+	rows, err := r.db.QueryContext(
+		ctx,
+		query,
+		filter.CategoryID,
+		filter.FilterableOnly,
+		filter.IncludeInactive,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list product attribute definitions: %w", err)
+	}
+	defer rows.Close()
+
+	prodAttributeDefs := make([]ProductAttributeDefinition, 0)
+
+	for rows.Next() {
+		var prodAttributeDef ProductAttributeDefinition
+
+		if err := rows.Scan(
+			&prodAttributeDef.AttributeID,
+			&prodAttributeDef.CategoryID,
+			&prodAttributeDef.Code,
+			&prodAttributeDef.DisplayName,
+			&prodAttributeDef.Description,
+			&prodAttributeDef.DataType,
+			&prodAttributeDef.Unit,
+			&prodAttributeDef.IsRequired,
+			&prodAttributeDef.IsFilterable,
+			&prodAttributeDef.IsVariantDefining,
+			&prodAttributeDef.Status,
+			&prodAttributeDef.CreatedAt,
+			&prodAttributeDef.UpdatedAt,
+                 );  err != nil {
+			return nil, fmt.Errorf("scan product: %w", err)
+		}
+
+		prodAttributeDefs = append(prodAttributeDefs, prodAttributeDef)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate product attribute definitons: %w", err)
+	}
+
+	return prodAttributeDefs, nil
 }
 
 // ListProducts returns products from the catalogue database.

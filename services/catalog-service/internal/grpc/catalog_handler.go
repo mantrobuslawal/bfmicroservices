@@ -91,6 +91,40 @@ func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.List
  	return response, nil
  }
 
+// ListProductAttributeDefinitions returns list of product attribute definitions
+// matching filter criteria.
+func (h *CatalogHandler)  ListProductAttributeDefinitions(ctx context.Context, 
+			                                  req *catalogv1.ListProductAttributeDefinitionsRequest) 
+	(*catalogv1.ListProductAttributeDefinitionsResponse, error) {
+	// category ID required
+	catId := req.GetCategoryId()
+	if catId == "" {
+		return nil, status.Error(code.INVALID_ARGUMENT, "missing category id")  
+	}
+	prodAttributeDefs, err := h.catalogService.ListProductAttributeDefinitons(ctx, 
+				catalog.ListProductAttributeDefinitionsFilter{
+					CategoryID: catId,
+                                        FilterableOnly: req.GetFilterableOnly(),
+                                        IncludeInactive: req.GetIncludeInactive(),
+				})
+	if err != nil {
+		h.logger.Error("failed to list product attribute definitions", "error", err)
+		return nil, status.Error(codes.Internal, "failed to list product attribute definitions")
+	}
+
+	response := &catalogv1.ListAttributeDefinitionsResponse {
+		AttributeDefinitions: make([]*catalogv1.ProductAttributeDefinition,
+					   0, len(prodAttributeDefs)),
+	}
+
+	for _, prodAttributeDef := range prodAttributeDefs {
+		response.AttributeDefinitions = append(response.AttributeDefinitions, 
+			productAttributeDefinitionToProto(prodAttributeDef))
+	}
+
+	return response, nil
+}
+
 
 // grpcError maps domain errors to gRPC status errors.
 func grpcError(logger *slog.Logger, publicMessage string, err error) error {

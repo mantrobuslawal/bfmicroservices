@@ -71,3 +71,23 @@ import (
  }
 
 
+ func productAttributeDefToProto(prodAttrDef catalog.productAttributeDefinition) *catalogv1.ProductAttributeDefinition {
+      opts []*catalogv1.ProdAttributeOption
+      for _, opt := range proAttrDef.Options {
+		opts = append(opts, prodOptionToProto(opt))
+	}
+      return &catalogv1.ProductAttributeDefinition{
+		AttributeId: prodAttrDef.AttributeID,
+		CategoryId:  prodAttrDef.CategoryID,
+                Code:        prodAttrDef.Code,
+                DisplayName: prodAttrDef.DisplayName,
+                Description: prodAttrDef.Description,
+                DataType:    ,
+                Unit: ,
+                IsRequired: ,
+                IsFilterable: ,
+                IsVarianrDefining: ,
+                Options:      opts,
+                Status: ,   
+	}
+ }

@@ -48,6 +48,7 @@ message Category {
   ProductStatus status = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  int32 display_order = 9;
 }
 
 // Product represents governed product catalogue data.
