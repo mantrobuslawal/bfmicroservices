@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1"
+	common "github.com/mantrobuslawal/bfstore/gen/go/bfstore/common/v1"
 )
 
 // CatalogHandler implements the generated Catalogue Service gRPC interface.
@@ -30,21 +32,26 @@ func NewCatalogHandler(catalogService *catalog.Service, logger *slog.Logger) *Ca
 
 // ListProducts returns collection of products matching filter criteria.
 func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListProductsRequest) (*catalogv1.ListProductsResponse, error) {
-	products, err := h.catalogService.ListProducts(ctx, catalog.ListProductsFilter{
+	result, err := h.catalogService.ListProducts(ctx, catalog.ListProductsFilter{
     	CategoryID:       req.GetCategoryId(),
     	IncludeInactive: req.GetIncludeInactive(),
- 		Limit:           int(req.GetPage().GetPageSize()),
- 		Offset:          0, 	})
- 	if err != nil {
+ 		PageSize:           int(req.GetPage().GetPageSize()),
+ 		PageToken:          req.GetPage().GetPageToken(), 	})
+ 
+	if err != nil {
  		h.logger.Error("failed to list products", "error", err)
- 		return nil, status.Error(codes.Internal, "failed to list products")
+ 		return nil, mapServiceError(err)
  	}
 
  	response := &catalogv1.ListProductsResponse{
- 		Products: make([]*catalogv1.Product, 0, len(products)),
+ 		Products: make([]*catalogv1.Product, 0, len(result.Products)),
+		Page: &common.PageResponse{
+			NextPageToken: result.NextToken,
+			TotalCount: 0, // Not calculated. Set to 0 as default
+		}
  	}
 
- 	for _, product := range products {
+ 	for _, product := range result.Products {
  		response.Products = append(response.Products, productToProto(product))
  	}
 
@@ -53,13 +60,15 @@ func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListPr
 
 // GetProduct returns single product matching requested productID.
 func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
- 	product, err := h.catalogService.GetProduct(ctx, req.GetProductId())
- 	if errors.Is(err, catalog.ErrNotFound) {
- 		return nil, status.Error(codes.NotFound, "product not found")
- 	}
+	productID := req.GetProductId()
+	if strings.Trim(productID) == "" {
+		return nil, status.Error(code.INVALID_ARGUMENT, "missing product id")  
+
+	}
+	product, err := h.catalogService.GetProduct(ctx, productID)
  	if err != nil {
- 		h.logger.Error("failed to get product", "product_id", req.GetProductId(), "error", err)
- 		return nil, status.Error(codes.Internal, "failed to get product")
+ 		h.logger.Error("failed to get product", "product_id", productID, "error", err)
+ 		return nil, mapServiceError(err)
  	}
 
  	return &catalogv1.GetProductResponse{
@@ -69,22 +78,27 @@ func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProdu
 
 // ListCategories returns list of product categories matching filter criteria.
 func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.ListCategoriesRequest) (*catalogv1.ListCategoriesResponse, error) {
- 	categories, err := h.catalogService.ListCategories(ctx, catalog.ListCategoriesFilter{
+	result, err := h.catalogService.ListCategories(ctx, catalog.ListCategoriesFilter{
  		ParentCategoryID: req.GetParentCategoryId(),
  		IncludeInactive: req.GetIncludeInactive(),
- 		Limit:           int(req.GetPage().GetPageSize()),
- 		Offset:          0,
+ 		PageSize:           int(req.GetPage().GetPageSize()),
+ 		PageToken:          req.GetPage().GetPageToken(),
  	})
+
  	if err != nil {
  		h.logger.Error("failed to list categories", "error", err)
- 		return nil, status.Error(codes.Internal, "failed to list categories")
+ 		return nil, mapServiceError(err)
  	}
 
  	response := &catalogv1.ListCategoriesResponse{
- 		Categories: make([]*catalogv1.Category, 0, len(categories)),
+ 		Categories: make([]*catalogv1.Category, 0, len(result.Categories)),
+		Page: &common.PageResponse{
+			NextPageToken: result.NextPageToken,
+			TotalCount: 0, // Not calculated - set to 0. 
+		}
  	}
 
- 	for _, category := range categories {
+ 	for _, category := range result.Categories {
  		response.Categories = append(response.Categories, categoryToProto(category))
  	}
 
@@ -94,46 +108,44 @@ func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.List
 // ListProductAttributeDefinitions returns list of product attribute definitions
 // matching filter criteria.
 func (h *CatalogHandler)  ListProductAttributeDefinitions(ctx context.Context, 
-			                                  req *catalogv1.ListProductAttributeDefinitionsRequest) 
+	  req *catalogv1.ListProductAttributeDefinitionsRequest) 
 	(*catalogv1.ListProductAttributeDefinitionsResponse, error) {
+	
 	// category ID required
-	catId := req.GetCategoryId()
-	if catId == "" {
+	catID := req.GetCategoryId()
+	if strings.trim(catId) == "" {
 		return nil, status.Error(code.INVALID_ARGUMENT, "missing category id")  
 	}
-	prodAttributeDefs, err := h.catalogService.ListProductAttributeDefinitons(ctx, 
+	
+	result, err := h.catalogService.ListProductAttributeDefinitons(ctx, 
 				catalog.ListProductAttributeDefinitionsFilter{
 					CategoryID: catId,
                                         FilterableOnly: req.GetFilterableOnly(),
                                         IncludeInactive: req.GetIncludeInactive(),
+					PageSize: int(req.GetPage().GetPageSize()),	
+					PageToken: req.GetPage().GetPageToken(),
 				})
 	if err != nil {
 		h.logger.Error("failed to list product attribute definitions", "error", err)
-		return nil, status.Error(codes.Internal, "failed to list product attribute definitions")
+		return nil, mapServiceError(err)
 	}
 
 	response := &catalogv1.ListAttributeDefinitionsResponse {
 		AttributeDefinitions: make([]*catalogv1.ProductAttributeDefinition,
-					   0, len(prodAttributeDefs)),
+					   0, len(result.ProductAttributeDefinitions),
+		Page: &common.PageResponse{
+			NextPageToken: result.NextPageToken,
+			TotalCount: 0, // Not calculated - set to 0. 
+		}),
 	}
 
-	for _, prodAttributeDef := range prodAttributeDefs {
+	for _, productAttributeDefinition := range result.ProductAttributeDefinitions {
 		response.AttributeDefinitions = append(response.AttributeDefinitions, 
-			productAttributeDefinitionToProto(prodAttributeDef))
+			productAttributeDefinitionToProto(productAttributeDefinition))
 	}
 
 	return response, nil
 }
 
-
-// grpcError maps domain errors to gRPC status errors.
-func grpcError(logger *slog.Logger, publicMessage string, err error) error {
-	if errors.Is(err, catalog.ErrNotFound) {
-		return status.Error(codes.NotFound, publicMessage)
-	}
-
-	logger.Error(publicMessage, "error", err)
-	return status.Error(codes.Internal, publicMessage)
-}
 
 
