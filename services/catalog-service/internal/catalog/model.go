@@ -108,16 +108,16 @@ type ProductImage struct {
 type ListProductsFilter struct {
 	CategoryID      string
 	IncludeInactive bool
-	Limit           int
-	Offset          int
+	PageSize        int
+	PageToken       string
 }
 
 // ListCategoriesFilter defines filter for category listing.
 type ListCategoriesFilter struct {
 	ParentCategoryID string
 	IncludeInactive  bool
-	Limit            int
-	Offset           int
+	PageSize         int
+	PageToken        string
 }
 
 // ListProductAttributeDefinitionFilter defines filter for 
@@ -127,4 +127,6 @@ type ListProductAttributeDefinitionFilter struct {
 	CategoryID string
 	IsFilterable bool
 	IncludeInactive bool
+        PageSize int
+	PageToken string	
 }
