@@ -3,15 +3,15 @@ package catalog
 
 // ProductAttributeType is the domain representation 
 // of the a product attribute definition's data type.
-type ProductAttributeType string
+type ProductAttributeDataType string
 
 const(
-	ProductAttributeString       ProductAttributeType = "string"
-	ProductAttributeNumber       ProductAttributeType = "number"
-	ProductAttributeBool         ProductAttributeType = "boolean"
-	ProductAttributeOption       ProductAttributeType = "option"
-	ProductAttributeMultiOption  ProductAttributeType = "multi_option"
-	ProductAttributeJson         ProductAttributeType = "json"
+	ProductAttributeString       ProductAttributeDataType = "string"
+	ProductAttributeNumber      ProductAttributeDataType = "number"
+	ProductAttributeBool         ProductAttributeDataType = "boolean"
+	ProductAttributeOption       ProductAttributeDataType  = "option"
+	ProductAttributeMultiOption   ProductAttributeDataType = "multi_option"
+	ProductAttributeJson        ProductAttributeDataType = "json"
        
 )
 

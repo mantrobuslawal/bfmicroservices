@@ -1,5 +1,23 @@
 package catalog
 
+type LifecycleStatus interface {
+	ProductStatus |
+	CategoryStatus |
+	ProductVariantStatus |
+	ProductAttributeDefinitionStatus |
+	ProductAttributeOptionStatus
+}
+
+func isKnownLifecycleStatus[S LifecycleStatus](status S) bool {
+	switch string(status) {
+	case "draft", "active", "inactive", "archived":
+		return true
+	default:
+		return false
+	}
+} 
+
+
 // ProductStatus is the domain representation of a
 // product's lifecycle.
 type ProductStatus string
@@ -12,15 +30,7 @@ const(
 )
 
 func (s ProductStatus) IsValid() bool {
-	switch s {
-	case  ProductStatusDraft,
-	      ProductStatusActive,
-	      ProductStatusInactive,
-	      ProductStatusArchived:
-	      return true
-	default:
-	      return false 
-	}
+	return isKnownLifecycleStatus(s)
 }
 
 func (s ProductStatus) String() string {
@@ -40,15 +50,7 @@ const(
 )
 
 func (c CategoryStatus) IsValid() bool {
-	switch c {
-	case  CategoryStatusDraft,
-	      CategoryStatusActive,
-	      CategoryStatusInactive,
-	      CategoryStatusArchived:
-	      return true
-	default:
-	      return false 
-	}
+	return isKnownLifecycleStatus(c)
 }
 
 
@@ -69,15 +71,7 @@ const(
 )
 
 func (v ProductVariantStatus) IsValid() bool {
-	switch v {
-	case  ProductVariantStatusDraft,
-	      ProductVariantStatusActive,
-	      ProductVariantStatusInactive,
-	      ProductVariantStatusArchived:
-	      return true
-	default:
-	      return false 
-	}
+	return isKnownLifecycleStatus(v)
 }
 
 
@@ -98,15 +92,6 @@ const(
 )
 
 func ( s ProductAttributeDefinitionStatus) IsValid() bool {
-	switch s {
-	case  ProducAttributeDefinitionStatusDraft,
-	      ProducAttributeDefinitionStatusActive,
-	      ProducAttributeDefinitionStatusInactive,
-	      ProductAttributeDefinitionStatusArchived:
-	      return true
-	default:
-	      return false 
-	}
 }
 
 
@@ -127,20 +112,11 @@ const(
 )
 
 func (o ProductAttributeOptionStatus ) IsValid() bool {
-	switch o {
-	case  ProductAttributeOptionStatusDraft,
-	      ProductAttributeOptionStatusActive,
-	      ProductAttributeOptionStatusInactive,
-	      ProductAttributeOptionStatusArchived:
-	      return true
-	default:
-	      return false 
-	}
+	return isKnownLifecycleStatus(o)
 }
 
 
 func (o  ProductAttributeOptionStatus ) String() string {
 	return string(o)
-
 }
 

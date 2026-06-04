@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1"
-	common "github.com/mantrobuslawal/bfstore/gen/go/bfstore/common/v1"
+	commonv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/common/v1"
 )
 
 // CatalogHandler implements the generated Catalogue Service gRPC interface.
@@ -45,8 +45,8 @@ func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListPr
 
  	response := &catalogv1.ListProductsResponse{
  		Products: make([]*catalogv1.Product, 0, len(result.Products)),
-		Page: &common.PageResponse{
-			NextPageToken: result.NextToken,
+		Page: &commonv1.PageResponse{
+			NextPageToken: result.NextPageToken,
 			TotalCount: 0, // Not calculated. Set to 0 as default
 		}
  	}
@@ -92,7 +92,7 @@ func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.List
 
  	response := &catalogv1.ListCategoriesResponse{
  		Categories: make([]*catalogv1.Category, 0, len(result.Categories)),
-		Page: &common.PageResponse{
+		Page: &commonv1.PageResponse{
 			NextPageToken: result.NextPageToken,
 			TotalCount: 0, // Not calculated - set to 0. 
 		}
@@ -133,7 +133,7 @@ func (h *CatalogHandler)  ListProductAttributeDefinitions(ctx context.Context,
 	response := &catalogv1.ListAttributeDefinitionsResponse {
 		AttributeDefinitions: make([]*catalogv1.ProductAttributeDefinition,
 					   0, len(result.ProductAttributeDefinitions),
-		Page: &common.PageResponse{
+		Page: &commonv1.PageResponse{
 			NextPageToken: result.NextPageToken,
 			TotalCount: 0, // Not calculated - set to 0. 
 		}),
