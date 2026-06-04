@@ -120,7 +120,7 @@ func (h *CatalogHandler)  ListProductAttributeDefinitions(ctx context.Context,
 	result, err := h.catalogService.ListProductAttributeDefinitons(ctx, 
 				catalog.ListProductAttributeDefinitionsFilter{
 					CategoryID: catId,
-                                        FilterableOnly: req.GetFilterableOnly(),
+                                        IsFilterable: req.GetFilterableOnly(),
                                         IncludeInactive: req.GetIncludeInactive(),
 					PageSize: int(req.GetPage().GetPageSize()),	
 					PageToken: req.GetPage().GetPageToken(),
