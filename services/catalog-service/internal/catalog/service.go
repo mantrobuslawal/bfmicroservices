@@ -72,7 +72,7 @@ func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (L
 		Cursor: cursor,
 	})
 	if err != nil {
-		return ListCatalogQueryResult{}, nil
+		return ListCatalogQueryResult{}, err
 	}
 
 	nextToken := ""
@@ -83,7 +83,7 @@ func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (L
 		last := products[len(products) - 1]
 		nexToken, err = encodeCatalogCursor(last)
 		if err != nil {
-			return ListCatalogQueryResult{}, nil
+			return ListCatalogQueryResult{}, err
 		}
 	}
 
@@ -104,7 +104,7 @@ func (s *Service) GetProduct(ctx context.Context, productID string) (Product, er
 		return Product{}, ErrProductNotFound
 	}
 
-	return product, nil
+	return product, err
 }
 
 // ListCategories returns customer-visible catalogue categories.
@@ -130,7 +130,7 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 		Cursor: cursor,
 	})
 	if err != nil {
-		return ListCatalogQueryResult{}, nil
+		return ListCatalogQueryResult{}, err
 	}
 
 	nextToken := ""
@@ -141,7 +141,7 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 		last := categories[len(categories) - 1]
 		nexToken, err = encodeCatalogCursor(last)
 		if err != nil {
-			return ListCatalogQueryResult{}, nil
+			return ListCatalogQueryResult{}, err
 		}
 	}
 
@@ -176,7 +176,7 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context,
 		Cursor: cursor,
 	})
 	if err != nil {
-		return ListCatalogQueryResult{}, nil
+		return ListCatalogQueryResult{}, err
 	}
 
 	nextToken := ""
@@ -187,7 +187,7 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context,
 		last := attributeDefinitions[len(attributeDefinitions) - 1]
 		nexToken, err = encodeCatalogCursor(last)
 		if err != nil {
-			return ListCatalogQueryResult{}, nil
+			return ListCatalogQueryResult{}, err
 		}
 	}
 
