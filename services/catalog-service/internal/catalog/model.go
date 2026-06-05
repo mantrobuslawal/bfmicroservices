@@ -99,7 +99,7 @@ type ProductAttributeValue struct {
 
 // ProductImage represents customer-facing catalogue imagery.
 type ProductImage struct {
-	ImageID string
+	ImageID CatalogID
 	ProductID string
 	Url string
 	AltText string
@@ -109,7 +109,7 @@ type ProductImage struct {
 
 // ListProductsFilter defines filter for product listing.
 type ListProductsFilter struct {
-	CategoryID      string
+	CategoryID      CatlogID
 	IncludeInactive bool
 	PageSize        int
 	PageToken       string
@@ -117,7 +117,7 @@ type ListProductsFilter struct {
 
 // ListCategoriesFilter defines filter for category listing.
 type ListCategoriesFilter struct {
-	ParentCategoryID string
+	ParentCategoryID CatalogID
 	IncludeInactive  bool
 	PageSize         int
 	PageToken        string
@@ -127,7 +127,7 @@ type ListCategoriesFilter struct {
 // product attribute definitions.
 type ListProductAttributeDefinitionFilter struct {
 	// Required category ID.
-	CategoryID string
+	CategoryID CatalogID
 	IsFilterable bool
 	IncludeInactive bool
         PageSize int
