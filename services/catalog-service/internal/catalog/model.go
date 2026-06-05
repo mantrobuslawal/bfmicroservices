@@ -10,10 +10,13 @@ type Money struct {
 	CurrencyCode string
 }
 
+// CatalogID models the product,Attribute, Sku, category and partentCategory Id fields.
+type CatalogID string
+
 // Product is the internal domain representation of a catalogue product.
 type Product struct {
-	ProductID   string
-	CategoryID  string
+	ProductID   CatalogID
+	CategoryID  CatalogID
 	Name        string
 	Slug        string
 	Description string
@@ -29,8 +32,8 @@ type Product struct {
 
 // Category is the internal domain representation of a product category.
 type Category struct {
-	CategoryID        string
-	ParentCategoryID  string
+	CategoryID        CatalogID
+	ParentCategoryID  CatalogID
 	Name              string
 	Slug              string
 	Description       string
@@ -43,9 +46,9 @@ type Category struct {
 
 // ProductVariant represents a purchaseable product variation.
 type ProductVariant struct{
-	VariantID string
-        ProductID string
-        Sku       string
+	VariantID CatalogID
+        ProductID CatalogID
+        Sku       CatalogID
         VariantName string
         Status  ProductVariantStatus
         Price   Money
@@ -57,8 +60,8 @@ type ProductVariant struct{
 // ProductAttributeDefintion defines an attribute that is
 // valid for a category
 type ProductAttributeDefinition struct {
-	AttributeID string
-	CategoryID string
+	AttributeID CatalogID
+	CategoryID CatalogID
 	Code string
 	DisplayName string
 	Description string
@@ -74,7 +77,7 @@ type ProductAttributeDefinition struct {
 // ProductAttributeOption represents a controlled allowed
 // value for an attribute definition.
 type ProductAttributeOption struct {
-	OptionID string
+	OptionID CatalogID
 	Value	string
 	DisplayName string
 	DisplayOrder int
@@ -84,7 +87,7 @@ type ProductAttributeOption struct {
 // ProductAttributeValue represents a product-specific or
 // a variant-specific value for a defined attribute.
 type ProductAttributeValue struct {
-	AttributeID  string
+	AttributeID  CatalogID
 	Code string
 	DisplayName string
 	DataType ProductAttributeDataType
