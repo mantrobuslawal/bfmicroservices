@@ -109,7 +109,7 @@ type ProductImage struct {
 
 // ListProductsFilter defines filter for product listing.
 type ListProductsFilter struct {
-	CategoryID      CatlogID
+	CategoryID      CatalogID
 	IncludeInactive bool
 	PageSize        int
 	PageToken       string
