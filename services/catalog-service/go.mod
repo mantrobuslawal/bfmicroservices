@@ -3,6 +3,7 @@ module github.com/mantrobuslawal/bfstore/services/catalog-service
 go 1.25.0
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/mantrobuslawal/bfstore v0.0.0-20260531184822-8a33d47ff41b
 	google.golang.org/grpc v1.81.1
