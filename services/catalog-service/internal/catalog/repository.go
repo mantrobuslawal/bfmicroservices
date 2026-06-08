@@ -90,14 +90,18 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
 	for rows.Next() {
 		var product Product
 
+		var description sql.NullString
+		var brand sql.NullString
+		var rawStatus string
+
 		if err := rows.Scan(
 			&product.ProductID,
 			&product.CategoryID,
 			&product.Name,
 			&product.Slug,
-			&product.Description,
-			&product.Brand,
-			&product.Status,
+			&description,
+			&brand,
+			&rawStatus,
 			&product.BasePrice.AmountMinor,
 			&product.BasePrice.CurrencyCode,
 			&product.CreatedAt,
@@ -105,6 +109,20 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
 		); err != nil {
 			return nil, fmt.Errorf("scan product row: %w", err)
 		}
+
+		if description.Valid {
+			product.Description = description.String
+		}
+
+		if brand.Valid {
+			product.Brand = brand.String
+		}
+
+		status := ProductStatus(rawStatus)
+		if !status.IsValid() {
+			return nil, fmt.Errorf("invalid product status %q", rawStatus)
+		}
+		product.Status = status
 
 		products = append(products, product)
 	}
@@ -202,15 +220,18 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 
 	for rows.Next() {
 		var category Category
+
 		var parentCategoryID sql.NullString
+		var description sql.NullString
+		var rawStatus string
 
 		if err := rows.Scan(
 			&category.CategoryID,
 			&parentCategoryID,
 			&category.Name,
 			&category.Slug,
-			&category.Description,
-			&category.Status,
+			&description,
+			&rawStatus,
 			&category.DisplayOrder,
 			&category.CreatedAt,
 			&category.UpdatedAt,
@@ -222,6 +243,16 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 			parentId := CategoryID(parentCategoryID.String)
 			category.ParentCategoryID = &parentId
 		}
+
+		if description.Valid {
+			category.Description = description.String
+		}
+
+		status := CategoryStatus(rawStatus)
+		if !status.IsValid() {
+			return nil, fmt.Errorf("invalid category status: %q", rawStatus)
+		}
+		category.Status = status
 
 		categories = append(categories, category)
 	}
@@ -301,21 +332,46 @@ func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, q
 	for rows.Next() {
 		var productAttributeDefinition ProductAttributeDefinition
 
+		var description sql.NullString
+		var unit sql.NullString
+		var rawDataType string
+		var rawStatus string
+
 		if err := rows.Scan(
 			&productAttributeDefinition.AttributeID,
 			&productAttributeDefinition.CategoryID,
 			&productAttributeDefinition.Code,
 			&productAttributeDefinition.DisplayName,
-			&productAttributeDefinition.Description,
-			&productAttributeDefinition.DataType,
-			&productAttributeDefinition.Unit,
+			&description,
+			&rawDataType,
+			&unit,
 			&productAttributeDefinition.IsRequired,
 			&productAttributeDefinition.IsFilterable,
 			&productAttributeDefinition.IsVariantDefining,
-			&productAttributeDefinition.Status,
+			&rawStatus,
 			&productAttributeDefinition.CreatedAt); err != nil {
 			return nil, err
 		}
+
+		if description.Valid {
+			productAttributeDefinition.Description = description.String
+		}
+
+		if unit.Valid {
+			productAttributeDefinition.Unit = unit.String
+		}
+
+		dataType := ProductAttributeDataType(rawDataType)
+		if !dataType.IsValid() {
+			return nil, fmt.Errorf("invalid product attribute data type %q", rawDataType)
+		}
+		productAttributeDefinition.DataType = dataType
+
+		status := ProductAttributeDefinitionStatus(rawStatus)
+		if !status.IsValid() {
+			return nil, fmt.Errorf("invalid product attribute definition ststus %q", rawStatus)
+		}
+		productAttributeDefinition.Status = status
 
 		productAttributeDefinitions = append(productAttributeDefinitions, productAttributeDefinition)
 	}
@@ -567,15 +623,30 @@ func (r *MySQLRepository) listProductImages(ctx context.Context, productID Produ
 	for rows.Next() {
 		var image ProductImage
 
+		var (
+			url     sql.NullString
+			altText sql.NullString
+		)
+
 		if err := rows.Scan(
 			&image.ImageID,
 			&image.ProductID,
-			&image.Url,
-			&image.AltText,
+			&url,
+			&altText,
 			&image.DisplayOrder,
 		); err != nil {
 			return nil, fmt.Errorf("scan product image row: %w", err)
 		}
+
+		if !url.Valid {
+			return nil, fmt.Errorf("image url id cannot be nil")
+		}
+		image.Url = url.String
+
+		if !altText.Valid {
+			return nil, fmt.Errorf("image alt text cannot be nil")
+		}
+		image.AltText = altText.String
 
 		images = append(images, &image)
 	}

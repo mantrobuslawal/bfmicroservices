@@ -22,13 +22,16 @@ func newMockMySQLRepository(t *testing.T) (*MySQLRepository, sqlmock.Sqlmock, fu
 	cleanup := func() {
 		t.Helper()
 
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Fatalf("unmet sqlmock expectations: %v", err)
-		}
+		mock.ExpectClose()
 
 		if err := db.Close(); err != nil {
 			t.Fatalf("close mock database: %v", err)
 		}
+
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("unmet sqlmock expectations: %v", err)
+		}
+
 	}
 
 	return NewMySQLRepository(db), mock, cleanup
@@ -217,11 +220,11 @@ func TestMySQLRepository_ListProductsReturnsProducts(t *testing.T) {
 		t.Fatalf("first.Slug = %q, want %q", got, want)
 	}
 
-	if first.Description == nil || *first.Description != "A cheerful lamp for late-night debugging." {
+	if first.Description == "" || first.Description != "A cheerful lamp for late-night debugging." {
 		t.Fatalf("first.Description = %v, want populated description", first.Description)
 	}
 
-	if first.Brand == nil || *first.Brand != "Borough" {
+	if first.Brand == "" || first.Brand != "Borough" {
 		t.Fatalf("first.Brand = %v, want Borough", first.Brand)
 	}
 
@@ -287,11 +290,11 @@ func TestMySQLRepository_ListProductsHandlesNullableDescriptionAndBrand(t *testi
 		t.Fatalf("len(products) = %d, want %d", got, want)
 	}
 
-	if products[0].Description != nil {
+	if products[0].Description != "" {
 		t.Fatalf("Description = %v, want nil", products[0].Description)
 	}
 
-	if products[0].Brand != nil {
+	if products[0].Brand != "" {
 		t.Fatalf("Brand = %v, want nil", products[0].Brand)
 	}
 }
@@ -427,9 +430,25 @@ func TestMySQLRepository_ListProductsWrapsRowsError(t *testing.T) {
 	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
+
 	rowsErr := errors.New("rows iteration failed")
 
 	rows := sqlmock.NewRows(productRowColumns()).
+		AddRow(
+			"prod_row_error",
+			"cat_lighting",
+			"Gopher Desk Lamp",
+			"gopher-desk-lamp",
+			"A cheerful lamp for late-night debugging",
+			"Borough",
+			"active",
+			int64(4999),
+			"GBP",
+			createdAt,
+			updatedAt,
+		).
 		RowError(0, rowsErr)
 
 	mock.ExpectQuery("FROM products").
@@ -578,7 +597,7 @@ func TestMySQLRepository_GetProductReturnsProductWithChildren(t *testing.T) {
 			"img_detail",
 			"prod_gopher_lamp",
 			"https://example.test/gopher-lamp-detail.png",
-			nil,
+			"Close-up of the Gopher Desk Lamp shade",
 			20,
 		)
 
@@ -651,12 +670,16 @@ func TestMySQLRepository_GetProductReturnsProductWithChildren(t *testing.T) {
 		t.Fatalf("first image ProductID = %q, want %q", got, want)
 	}
 
-	if product.Images[0].AltText == nil || *product.Images[0].AltText != "Gopher Desk Lamp on a desk" {
-		t.Fatalf("first image AltText = %v, want populated alt text", product.Images[0].AltText)
+	if product.Images[0].AltText != "Gopher Desk Lamp on a desk" {
+		t.Fatalf("first image AltText = %q, want %q",
+			product.Images[0].AltText,
+			"Gopher Desk Lamp on a desk")
 	}
 
-	if product.Images[1].AltText != nil {
-		t.Fatalf("second image AltText = %v, want nil", product.Images[1].AltText)
+	if product.Images[1].AltText != "Close-up of the Gopher Desk Lamp shade" {
+		t.Fatalf("second image AltText = %q, want %q",
+			product.Images[1].AltText,
+			"Close-up of the Gopher Desk Lampp shade")
 	}
 }
 
@@ -902,7 +925,7 @@ func TestMySQLRepository_ListCategoriesReturnsCategories(t *testing.T) {
 		t.Fatalf("root.ParentCategoryID = %v, want nil", root.ParentCategoryID)
 	}
 
-	if root.Description == nil || *root.Description != "Developer-themed lighting." {
+	if root.Description == "" || root.Description != "Developer-themed lighting." {
 		t.Fatalf("root.Description = %v, want populated description", root.Description)
 	}
 
@@ -920,7 +943,7 @@ func TestMySQLRepository_ListCategoriesReturnsCategories(t *testing.T) {
 		t.Fatalf("child.ParentCategoryID = %v, want cat_lighting", child.ParentCategoryID)
 	}
 
-	if child.Description != nil {
+	if child.Description != "" {
 		t.Fatalf("child.Description = %v, want nil", child.Description)
 	}
 }
@@ -1073,15 +1096,15 @@ func TestMySQLRepository_ListProductAttributeDefinitionsReturnsDefinitions(t *te
 		t.Fatalf("first.CategoryID = %q, want %q", got, want)
 	}
 
-	if first.Description == nil || *first.Description != "Primary product material." {
+	if first.Description == "" || first.Description != "Primary product material." {
 		t.Fatalf("first.Description = %v, want populated description", first.Description)
 	}
 
-	if got, want := first.DataType, ProductAttributeDataTypeString; got != want {
+	if got, want := first.DataType, ProductAttributeTypeString; got != want {
 		t.Fatalf("first.DataType = %q, want %q", got, want)
 	}
 
-	if first.Unit != nil {
+	if first.Unit != "" {
 		t.Fatalf("first.Unit = %v, want nil", first.Unit)
 	}
 
@@ -1103,15 +1126,15 @@ func TestMySQLRepository_ListProductAttributeDefinitionsReturnsDefinitions(t *te
 
 	second := definitions[1]
 
-	if second.Description != nil {
+	if second.Description != "" {
 		t.Fatalf("second.Description = %v, want nil", second.Description)
 	}
 
-	if second.Unit == nil || *second.Unit != "kg" {
+	if second.Unit == "" || second.Unit != "kg" {
 		t.Fatalf("second.Unit = %v, want kg", second.Unit)
 	}
 
-	if got, want := second.DataType, ProductAttributeDataTypeNumber; got != want {
+	if got, want := second.DataType, ProductAttributeTypeNumber; got != want {
 		t.Fatalf("second.DataType = %q, want %q", got, want)
 	}
 }
