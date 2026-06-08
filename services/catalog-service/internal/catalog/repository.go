@@ -11,7 +11,7 @@ import (
 type Repository interface {
 	ListProducts(ctx context.Context, query ListQuery) ([]Product, error)
 
-	GetProduct(ctx context.Context, productID string) (Product, error)
+	GetProduct(ctx context.Context, productID ProductID) (Product, error)
 
 	ListCategories(ctx context.Context, query ListQuery) ([]Category, error)
 
@@ -57,7 +57,7 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
   			AND (? = TRUE OR status = 'active') 
   			AND (
 				created_at < ?
-				OR (created_at = ? AND id < ?)
+				OR (created_at = ? AND product_id < ?)
 	  		)
 		`
 
@@ -71,7 +71,7 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
 	}
 
 	sqlText += `
-		ORDER BY created_at DESC, id DESC
+		ORDER BY created_at DESC, product_id DESC
 		LIMIT ?
 	`
 
@@ -114,7 +114,7 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
 }
 
 // GetProduct returns one product by ID, along with its variants, attributes and images.
-func (r *MySQLRepository) GetProduct(ctx context.Context, productID string) (Product, error) {
+func (r *MySQLRepository) GetProduct(ctx context.Context, productID ProductID) (Product, error) {
 	product, err := r.getProductRow(ctx, productID)
 	if err != nil {
 		return Product{}, err
@@ -147,7 +147,16 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 	args := []any{query.ID}
 
 	sqlText := `
-	       SELECT *
+	       SELECT 
+		   category_id,
+		   parent_category_id,
+		   name,
+		   slug,
+		   description,
+		   status,
+		   display_order,
+		   created_at,
+		   updated_at
 	       FROM categories
 	       WHERE (? = '' OR parent_category_id = ?)
 	`
@@ -157,7 +166,7 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
   			AND (? = TRUE OR status = 'active') 
   			AND (
 				created_at < ?
-				OR (created_at = ? AND id < ?)
+				OR (created_at = ? AND category_id < ?)
 	  		)
 		`
 
@@ -171,7 +180,7 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 	}
 
 	sqlText += `
-		ORDER BY created_at DESC, id DESC
+		ORDER BY created_at DESC, category_id DESC
 		LIMIT ?
 	`
 
@@ -246,7 +255,7 @@ func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, q
   		AND (? = TRUE OR status = 'active') 
   		AND (
 			created_at < ?
-			OR (created_at = ? AND id < ?)
+			OR (created_at = ? AND attribute_id < ?)
 	  	)`
 
 		args = append(
@@ -260,7 +269,7 @@ func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, q
 	}
 
 	sqlText += `
-		ORDER BY created_at DESC, id DESC
+		ORDER BY created_at DESC, attribute_id DESC
 		LIMIT ?
 	`
 
@@ -303,7 +312,7 @@ func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, q
 	return productAttributeDefinitions, nil
 }
 
-func (r *MySQLRepository) getProductRow(ctx context.Context, productID string) (Product, error) {
+func (r *MySQLRepository) getProductRow(ctx context.Context, productID ProductID) (Product, error) {
 	const query = `
 	SELECT
 	  product_id,
@@ -316,7 +325,7 @@ func (r *MySQLRepository) getProductRow(ctx context.Context, productID string) (
 	  base_price_minor,
 	  currency_code,
  	  created_at,
-          upddated_at,
+       updated_at
        FROM products
        WHERE product_id = ?    
   `
@@ -366,7 +375,7 @@ func (r *MySQLRepository) getProductRow(ctx context.Context, productID string) (
 	return product, nil
 }
 
-func (r *MySQLRepository) listProductVariants(ctx context.Context, productID string) ([]*ProductVariant, error) {
+func (r *MySQLRepository) listProductVariants(ctx context.Context, productID ProductID) ([]*ProductVariant, error) {
 	const query = `
 	SELECT
           variant_id,
@@ -432,7 +441,7 @@ func (r *MySQLRepository) listProductVariants(ctx context.Context, productID str
 	return variants, nil
 }
 
-func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, productID string) ([]*ProductAttributeValue, error) {
+func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, productID ProductID) ([]*ProductAttributeValue, error) {
 	const query = `
      SELECT
         product_attribute_value_id,
@@ -519,14 +528,14 @@ func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, produc
 	return values, nil
 }
 
-func (r *MySQLRepository) listProductImages(ctx context.Context, productID string) ([]*ProductImage, error) {
+func (r *MySQLRepository) listProductImages(ctx context.Context, productID ProductID) ([]*ProductImage, error) {
 	const query = `
 	   SELECT
 	     image_id,
              product_id,
              url,
              alt_text,
-             display_order,
+             display_order
            FROM product_images
            WHERE product_id = ?
            ORDER BY display_order ASC, image_id ASC   

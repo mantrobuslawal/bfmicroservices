@@ -112,7 +112,7 @@ func (s *Service) GetProduct(ctx context.Context, productID ProductID) (Product,
 		return Product{}, ErrInvalidProductID
 	}
 
-	product, err := s.repository.GetProduct(ctx, id)
+	product, err := s.repository.GetProduct(ctx, ProductID(id))
 	if err != nil {
 		return Product{}, ErrProductNotFound
 	}

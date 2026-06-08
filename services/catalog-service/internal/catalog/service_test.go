@@ -9,7 +9,7 @@ import (
 
 type fakeRepository struct {
 	listProductsFunc                    func(context.Context, ListQuery) ([]Product, error)
-	getProductFunc                      func(context.Context, string) (Product, error)
+	getProductFunc                      func(context.Context, ProductID) (Product, error)
 	listCategoriesFunc                  func(context.Context, ListQuery) ([]Category, error)
 	listProductAttributeDefinitionsFunc func(context.Context, ListQuery) ([]ProductAttributeDefinition, error)
 }
@@ -22,7 +22,7 @@ func (f fakeRepository) ListProducts(ctx context.Context, query ListQuery) ([]Pr
 	return f.listProductsFunc(ctx, query)
 }
 
-func (f fakeRepository) GetProduct(ctx context.Context, productID string) (Product, error) {
+func (f fakeRepository) GetProduct(ctx context.Context, productID ProductID) (Product, error) {
 	if f.getProductFunc == nil {
 		return Product{}, errors.New("getProductFunc not configured")
 	}
@@ -59,8 +59,8 @@ func TestService_GetProduct(t *testing.T) {
 	}
 
 	service := NewService(fakeRepository{
-		getProductFunc: func(ctx context.Context, productID string) (Product, error) {
-			if productID != string(want.ProductID) {
+		getProductFunc: func(ctx context.Context, productID ProductID) (Product, error) {
+			if productID != want.ProductID {
 				t.Fatalf("productID = %q, want %q", productID, want.ProductID)
 			}
 
@@ -86,7 +86,7 @@ func TestService_GetProductMapsRepositoryNotFound(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(fakeRepository{
-		getProductFunc: func(ctx context.Context, productID string) (Product, error) {
+		getProductFunc: func(ctx context.Context, productID ProductID) (Product, error) {
 			return Product{}, ErrProductNotFound
 		},
 	})
