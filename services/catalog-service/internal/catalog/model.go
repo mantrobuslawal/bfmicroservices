@@ -13,6 +13,9 @@ type Money struct {
 // ProductID represents a catalog product identifier.
 type ProductID string
 
+// VariantID represents a catalog product identifier.
+type VariantID string
+
 // ImageID represents a catalog product image identifier.
 type ImageID string
 
@@ -101,6 +104,7 @@ type ProductAttributeDefinition struct {
 	IsVariantDefining bool
 	Options           []*ProductAttributeOption
 	Status            ProductAttributeDefinitionStatus
+	CreatedAt         time.Time // used for paignation
 }
 
 // ProductAttributeOption represents a controlled allowed
@@ -158,7 +162,7 @@ type ListCategoriesFilter struct {
 
 // ListProductAttributeDefinitionFilter defines filter for
 // product attribute definitions.
-type ListProductAttributeDefinitionFilter struct {
+type ListProductAttributeDefinitionsFilter struct {
 	// Required category ID.
 	CategoryID      CategoryID
 	IsFilterable    bool

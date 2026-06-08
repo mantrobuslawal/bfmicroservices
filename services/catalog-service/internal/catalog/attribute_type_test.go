@@ -80,57 +80,57 @@ func TestProductAttributeDataType_String(t *testing.T) {
 	}
 }
 
-func TestProductAttributeValue_IsValid(t *testing.T) {
+func TestProductAttributeValueKind_IsValid(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name  string
-		value ProductAttributeValue
+		value ProductAttributeValueKind
 		want  bool
 	}{
 		{
 			name:  "string is valid",
-			value: ProductAttributeValue("string"),
+			value: ProductAttributeValueKind("string"),
 			want:  true,
 		},
 		{
 			name:  "number is valid",
-			value: ProductAttributeValue("number"),
+			value: ProductAttributeValueKind("number"),
 			want:  true,
 		},
 		{
 			name:  "boolean is valid",
-			value: ProductAttributeValue("boolean"),
+			value: ProductAttributeValueKind("boolean"),
 			want:  true,
 		},
 		{
 			name:  "option is valid",
-			value: ProductAttributeValue("option"),
+			value: ProductAttributeValueKind("option"),
 			want:  true,
 		},
 		{
 			name:  "multi option is valid",
-			value: ProductAttributeValue("multi_option"),
+			value: ProductAttributeValueKind("multi_option"),
 			want:  true,
 		},
 		{
 			name:  "json is valid",
-			value: ProductAttributeValue("json"),
+			value: ProductAttributeValueKind("json"),
 			want:  true,
 		},
 		{
 			name:  "unspecified is invalid",
-			value: ProductAttributeValue("unspecified"),
+			value: ProductAttributeValueKind("unspecified"),
 			want:  false,
 		},
 		{
 			name:  "empty is invalid",
-			value: ProductAttributeValue(""),
+			value: ProductAttributeValueKind(""),
 			want:  false,
 		},
 		{
 			name:  "unknown is invalid",
-			value: ProductAttributeValue("banana"),
+			value: ProductAttributeValueKind("banana"),
 			want:  false,
 		},
 	}
@@ -148,10 +148,10 @@ func TestProductAttributeValue_IsValid(t *testing.T) {
 	}
 }
 
-func TestProductAttributeValue_String(t *testing.T) {
+func TestProductAttributeValueKind_String(t *testing.T) {
 	t.Parallel()
 
-	value := ProductAttributeValue("json")
+	value := ProductAttributeValueKind("json")
 
 	if got, want := value.String(), "json"; got != want {
 		t.Fatalf("String() = %q, want %q", got, want)

@@ -1,7 +1,7 @@
 package catalog
 
 import (
-	"errors"
+	//"errors"
 	"strings"
 )
 
@@ -28,6 +28,26 @@ func isKnownLifecycleStatus[S LifecycleStatus](status S) bool {
 // product's lifecycle.
 type ProductStatus string
 
+// ParseToProductStatus converts a valid string value to a LifecycleStatus.
+// Returns an ErrInvalidLifecycleStatus error when the input string cannot
+// be matched to a valid LifecycleStatus.
+func ParseToProductStatus(status string) (ProductStatus, error) {
+	status = strings.Trim(status, " ")
+	switch status {
+	case "draft":
+		return ProductStatusDraft, nil
+	case "active":
+		return ProductStatusActive, nil
+	case "inactive":
+		return ProductStatusInactive, nil
+	case "archived":
+		return ProductStatusArchived, nil
+
+	default:
+		return "", ErrInvalidLifecycleStatus
+	}
+}
+
 // Valid ProductStatus values.
 const (
 	ProductStatusDraft    ProductStatus = "draft"
@@ -52,10 +72,10 @@ type CategoryStatus string
 
 // Valid CategoryStatus values.
 const (
-	CategoryStatusDraft     CategoryStatus = "draft"
-	CategoryStatusActive    CategoryStatus = "active"
-	CategortyStatusInactive CategoryStatus = "inactive"
-	CategoryStatusArchived  CategoryStatus = "archived"
+	CategoryStatusDraft    CategoryStatus = "draft"
+	CategoryStatusActive   CategoryStatus = "active"
+	CategoryStatusInactive CategoryStatus = "inactive"
+	CategoryStatusArchived CategoryStatus = "archived"
 )
 
 // IsValid returns true if the status is valid and false otherwise.
@@ -66,6 +86,26 @@ func (c CategoryStatus) IsValid() bool {
 // String converts a status from a LifecycleStatus to a string.
 func (c CategoryStatus) String() string {
 	return string(c)
+}
+
+// ParseToCategoryStatus converts a valid string value to a LifecycleStatus.
+// Returns an ErrInvalidLifecycleStatus error when the input string cannot
+// be matched to a valid LifecycleStatus.
+func ParseToCategoryStatus(status string) (CategoryStatus, error) {
+	status = strings.Trim(status, " ")
+	switch status {
+	case "draft":
+		return CategoryStatusDraft, nil
+	case "active":
+		return CategoryStatusActive, nil
+	case "inactive":
+		return CategoryStatusInactive, nil
+	case "archived":
+		return CategoryStatusArchived, nil
+
+	default:
+		return "", ErrInvalidLifecycleStatus
+	}
 }
 
 // ProductVariantStatus is the domain representation of a
@@ -79,6 +119,26 @@ const (
 	ProductVariantStatusInactive ProductVariantStatus = "inactive"
 	ProductVariantStatusArchived ProductVariantStatus = "archived"
 )
+
+// ParseToProductVariantStatus converts a valid string value to a LifecycleStatus.
+// Returns an ErrInvalidLifecycleStatus error when the input string cannot
+// be matched to a valid LifecycleStatus.
+func ParseToProductVariantStatus(status string) (ProductVariantStatus, error) {
+	status = strings.Trim(status, " ")
+	switch status {
+	case "draft":
+		return ProductVariantStatusDraft, nil
+	case "active":
+		return ProductVariantStatusActive, nil
+	case "inactive":
+		return ProductVariantStatusInactive, nil
+	case "archived":
+		return ProductVariantStatusArchived, nil
+
+	default:
+		return "", ErrInvalidLifecycleStatus
+	}
+}
 
 // IsValid returns true if the status is valid and false otherwise.
 func (v ProductVariantStatus) IsValid() bool {
@@ -102,12 +162,33 @@ const (
 	ProductAttributeDefinitionStatusArchived ProductAttributeDefinitionStatus = "archived"
 )
 
+// ParseToProductAttributeDefinitionStatus converts a valid string value to a LifecycleStatus.
+// Returns an ErrInvalidLifecycleStatus error when the input string cannot
+// be matched to a valid LifecycleStatus.
+func ParseToProductAttributeDefinitionStatus(status string) (ProductAttributeDefinitionStatus, error) {
+	status = strings.Trim(status, " ")
+	switch status {
+	case "draft":
+		return ProductAttributeDefinitionStatusDraft, nil
+	case "active":
+		return ProductAttributeDefinitionStatusActive, nil
+	case "inactive":
+		return ProductAttributeDefinitionStatusInactive, nil
+	case "archived":
+		return ProductAttributeDefinitionStatusArchived, nil
+
+	default:
+		return "", ErrInvalidLifecycleStatus
+	}
+}
+
 // IsValid returns true if the status is valid and false otherwise.
 func (s ProductAttributeDefinitionStatus) IsValid() bool {
+	return isKnownLifecycleStatus(s)
 }
 
 // String converts a status from a LifecycleStatus to a string.
-func (s ProductAtrributeDefinitionStatus) String() string {
+func (s ProductAttributeDefinitionStatus) String() string {
 	return string(s)
 }
 
@@ -123,6 +204,26 @@ const (
 	ProductAttributeOptionsArchived ProductAttributeOptionStatus = "archived"
 )
 
+// ParseToProductAttributeOptionStatus converts a valid string value to a LifecycleStatus.
+// Returns an ErrInvalidLifecycleStatus error when the input string cannot
+// be matched to a valid LifecycleStatus.
+func ParseToProductAttributeOptionStatus(status string) (ProductAttributeOptionStatus, error) {
+	status = strings.Trim(status, " ")
+	switch status {
+	case "draft":
+		return ProductAttributeOptionsDraft, nil
+	case "active":
+		return ProductAttributeOptionsActive, nil
+	case "inactive":
+		return ProductAttributeOptionsInactive, nil
+	case "archived":
+		return ProductAttributeOptionsArchived, nil
+
+	default:
+		return "", ErrInvalidLifecycleStatus
+	}
+}
+
 // IsValid returns true if the status is valid and false otherwise.
 func (o ProductAttributeOptionStatus) IsValid() bool {
 	return isKnownLifecycleStatus(o)
@@ -131,24 +232,4 @@ func (o ProductAttributeOptionStatus) IsValid() bool {
 // String converts a status from a LifecycleStatus to a string.
 func (o ProductAttributeOptionStatus) String() string {
 	return string(o)
-}
-
-// ParseLifecycleStatus converts a valid string value to a LifecycleStatus.
-// Returns an ErrInvalidLifecycleStatus error when the input string cannot
-// be matched to a valid LifecycleStatus.
-func ParseLifecycleStatus(status string) (LifecycleStatus, error) {
-	status = strings.Trim(status)
-	switch status {
-	case "draft":
-		return ProductStatusDraft, nil
-	case "active":
-		return ProductStatusActive, nil
-	case "inactive":
-		return ProductStatusInactive, nil
-	case "archived":
-		return ProductStatusArchived, nil
-
-	default:
-		return nil, ErrInvalidLifecycleStatus
-	}
 }

@@ -8,10 +8,10 @@ import (
 )
 
 type fakeRepository struct {
-	listProductsFunc                     func(context.Context, ListQuery) ([]Product, error)
-	getProductFunc                       func(context.Context, string) (Product, error)
-	listCategoriesFunc                   func(context.Context, ListQuery) ([]Category, error)
-	listProductAttributeDefinitionsFunc  func(context.Context, ListQuery) ([]ProductAttributeDefinition, error)
+	listProductsFunc                    func(context.Context, ListQuery) ([]Product, error)
+	getProductFunc                      func(context.Context, string) (Product, error)
+	listCategoriesFunc                  func(context.Context, ListQuery) ([]Category, error)
+	listProductAttributeDefinitionsFunc func(context.Context, ListQuery) ([]ProductAttributeDefinition, error)
 }
 
 func (f fakeRepository) ListProducts(ctx context.Context, query ListQuery) ([]Product, error) {

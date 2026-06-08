@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,8 +34,8 @@ type CatalogQueryResult interface {
 
 // ListCatalogQueryResult represents the combination of a collection of catalog objects
 // and next page token.
-type ListCatalogQueryResult struct {
-	Result        []CatalogQueryResult
+type ListResult[T CatalogQueryResult] struct {
+	Result        []T
 	NextPageToken string
 }
 
@@ -44,7 +45,7 @@ type ListQuery struct {
 	ID            string
 	FilterOptions []bool
 	Limit         int
-	Cursor        catalogCursor
+	Cursor        *catalogCursor
 }
 
 // catalogCursor represents object encoded to page token string for result pagination.
@@ -54,26 +55,26 @@ type catalogCursor struct {
 }
 
 // ListProducts returns customer-visible catalogue products.
-func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (ListCatalogQueryResult, error) {
+func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (ListResult[Product], error) {
 	pageSize, err := normalisePageSize(input.PageSize)
 	if err != nil {
-		return ListCatalogQueryResult{}, ErrInvalidPageSize
+		return ListResult[Product]{}, ErrInvalidPageSize
 	}
 
-	var cursor catalogCursor
-	if strings.Trim(input.PageToken) != "" {
-		cursor, err = decodedCursor(input.PageToken)
+	var cursor *catalogCursor
+	if strings.Trim(input.PageToken, " ") != "" {
+		cursor, err = decodeCursor(input.PageToken)
 		if err != nil {
-			return ListCatalogQueryResult{}, fmt.Errorf("invalid page token: %w", err)
+			return ListResult[Product]{}, fmt.Errorf("invalid page token: %w", err)
 
 		}
 	}
 
 	var id string
 
-	id, err = isValidCatalogID(input.CatalogID)
+	id, err = isValidCatalogID(input.CategoryID)
 	if err != nil {
-		return ListCatalogQueryResult{}, ErrInvalidCategoryID
+		return ListResult[Product]{}, ErrInvalidCategoryID
 	}
 
 	products, err := s.repository.ListProducts(ctx, ListQuery{
@@ -83,7 +84,7 @@ func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (L
 		Cursor:        cursor,
 	})
 	if err != nil {
-		return ListCatalogQueryResult{}, fmt.Errorf("list products category id:%q :%w", input.CatalogID, err)
+		return ListResult[Product]{}, fmt.Errorf("list products category id:%q :%w", input.CategoryID, err)
 	}
 
 	nextToken := ""
@@ -92,20 +93,20 @@ func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (L
 	if hasMore {
 		products = products[:pageSize]
 		last := products[len(products)-1]
-		nexToken, err = encodeCatalogCursor(last)
+		nextToken, err = encodeCursor(last)
 		if err != nil {
-			return ListCatalogQueryResult{}, fmt.Errorf("encode page token: %w", err)
+			return ListResult[Product]{}, fmt.Errorf("encode page token: %w", err)
 		}
 	}
 
-	return ListCatalogQueryResult{
+	return ListResult[Product]{
 		Result:        products,
 		NextPageToken: nextToken,
 	}, nil
 }
 
 // GetProduct returns a single product, it's variants and attributes.
-func (s *Service) GetProduct(ctx context.Context, productID CatalogID) (Product, error) {
+func (s *Service) GetProduct(ctx context.Context, productID ProductID) (Product, error) {
 	id, err := isValidCatalogID(productID)
 	if err != nil {
 		return Product{}, ErrInvalidProductID
@@ -120,25 +121,25 @@ func (s *Service) GetProduct(ctx context.Context, productID CatalogID) (Product,
 }
 
 // ListCategories returns customer-visible catalogue categories.
-func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter) (ListCatalogQueryResult, error) {
+func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter) (ListResult[Category], error) {
 
 	pageSize, err := normalisePageSize(input.PageSize)
 	if err != nil {
-		return ListCatalogQueryResult{}, ErrInvalidPageSize
+		return ListResult[Category]{}, ErrInvalidPageSize
 	}
 
-	var cursor catalogCursor
-	if strings.Trim(input.PageToken) != "" {
-		cursor, err = decodedCursor(input.PageToken)
+	var cursor *catalogCursor
+	if strings.Trim(input.PageToken, " ") != "" {
+		cursor, err = decodeCursor(input.PageToken)
 		if err != nil {
-			return ListCatalogQueryResult{}, fmt.Errorf("invalid page token: %w", err)
+			return ListResult[Category]{}, fmt.Errorf("invalid page token: %w", err)
 		}
 	}
 
 	var id string
 	id, err = isValidCatalogID(input.ParentCategoryID)
 	if err != nil {
-		return ListCatalogQueryResult{}, ErrInvalidCategoryID
+		return ListResult[Category]{}, ErrInvalidCategoryID
 	}
 
 	categories, err := s.repository.ListCategories(ctx, ListQuery{
@@ -148,7 +149,7 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 		Cursor:        cursor,
 	})
 	if err != nil {
-		return ListCatalogQueryResult{}, nil
+		return ListResult[Category]{}, nil
 	}
 
 	nextToken := ""
@@ -157,47 +158,47 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 	if hasMore {
 		categories = categories[:pageSize]
 		last := categories[len(categories)-1]
-		nexToken, err = encodeCatalogCursor(last)
+		nextToken, err = encodeCursor(last)
 		if err != nil {
-			return ListCatalogQueryResult{}, nil
+			return ListResult[Category]{}, nil
 		}
 	}
 
-	return ListCatalogQueryResult{
+	return ListResult[Category]{
 		Result:        categories,
 		NextPageToken: nextToken,
 	}, nil
 }
 
 // ListProductAttributeDefinitions returns catalogue product attribute definitions.
-func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input ListProductAttributeDefinitionsFilter) (ListCatalogQueryResult, error) {
+func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input ListProductAttributeDefinitionsFilter) (ListResult[ProductAttributeDefinition], error) {
 
 	pageSize, err := normalisePageSize(input.PageSize)
 	if err != nil {
-		return ListCatalogQueryResult{}, ErrInvalidPageSize
+		return ListResult[ProductAttributeDefinition]{}, ErrInvalidPageSize
 	}
 
-	var cursor catalogCursor
-	if strings.Trim(input.PageToken) != "" {
-		cursor, err = decodedCursor(input.PageToken)
+	var cursor *catalogCursor
+	if strings.Trim(input.PageToken, "") != "" {
+		cursor, err = decodeCursor(input.PageToken)
 		if err != nil {
-			return ListCatalogQueryResult{}, fmt.Errorf("invalid page token: %w", err)
+			return ListResult[ProductAttributeDefinition]{}, fmt.Errorf("invalid page token: %w", err)
 		}
 	}
 
 	var id string
 	id, err = isValidCatalogID(input.CategoryID)
 	if err != nil {
-		return ListCatalogQueryResult{}, ErrInvalidCategoryID
+		return ListResult[ProductAttributeDefinition]{}, ErrInvalidCategoryID
 	}
-	attributeDefinitions, err := s.repository.ListAttributeDefinitions(ctx, ListQuery{
+	attributeDefinitions, err := s.repository.ListProductAttributeDefinitions(ctx, ListQuery{
 		ID:            id,
 		FilterOptions: []bool{input.IncludeInactive, input.IsFilterable},
 		Limit:         pageSize + 1,
 		Cursor:        cursor,
 	})
 	if err != nil {
-		return ListCatalogQueryResult{}, nil
+		return ListResult[ProductAttributeDefinition]{}, nil
 	}
 
 	nextToken := ""
@@ -206,13 +207,13 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input Lis
 	if hasMore {
 		attributeDefinitions = attributeDefinitions[:pageSize]
 		last := attributeDefinitions[len(attributeDefinitions)-1]
-		nexToken, err = encodeCatalogCursor(last)
+		nextToken, err = encodeCursor(last)
 		if err != nil {
-			return ListCatalogQueryResult{}, nil
+			return ListResult[ProductAttributeDefinition]{}, nil
 		}
 	}
 
-	return ListCatalogQueryResult{
+	return ListResult[ProductAttributeDefinition]{
 		Result:        attributeDefinitions,
 		NextPageToken: nextToken,
 	}, nil
@@ -221,7 +222,7 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input Lis
 
 // Helper functions for PageSize and PageToken
 
-func normalisePageSize(size int) (int, err) {
+func normalisePageSize(size int) (int, error) {
 	if size <= 0 {
 		return defaultPageSize, nil
 	}
@@ -233,47 +234,57 @@ func normalisePageSize(size int) (int, err) {
 	return size, nil
 }
 
-func decodeCursor(pageToken string) (catalogCursor, error) {
+func decodeCursor(pageToken string) (*catalogCursor, error) {
 	data, err := base64.RawURLEncoding.DecodeString(pageToken)
 	if err != nil {
-		return catalogCursor{}, err
+		return nil, err
 	}
 
 	var token catalogCursor
 	if err := json.Unmarshal(data, &token); err != nil {
-		return catalogCursor{}, err
+		return nil, err
 	}
 
-	if token.ID == ""|token.CreatedAt.IsZero() {
-		return catalogCursor{}, errors.New("invalid field in catalog cursor")
+	if token.ID == "" {
+		return nil, errors.New("invalid field in catalog cursor")
 	}
 
-	return token, nil
+	if token.CreatedAt.IsZero() {
+		return nil, errors.New("invalid field in catalog cursor")
+	}
+
+	return &token, nil
 }
 
-func encodeProductCursor(c catalogQueryResult) (string, error) {
-	token := catalogCursor{
-		CreatedAt: c.CreatedAt,
+func encodeCursor[T CatalogQueryResult](c T) (string, error) {
+	var token catalogCursor
+	product, ok := any(c).(Product)
+	if ok {
+		token.CreatedAt = product.CreatedAt
+		token.ID = string(product.ProductID)
 	}
 
-	switch catalogQueryType := c.(type) {
-	case Product:
-		token.ID = catalogQueryType.ProductID
-	case Category, ProductAttributeDefiniton:
-		token.ID = catalogQueryType.CategoryID
-	default:
-		return "", fmt.Errorf("unknown catalog domain type: %v", c)
+	category, ok := any(c).(Category)
+	if ok {
+		token.CreatedAt = category.CreatedAt
+		token.ID = string(category.CategoryID)
+	}
+
+	pad, ok := any(c).(ProductAttributeDefinition)
+	if ok {
+		token.CreatedAt = pad.CreatedAt
+		token.ID = string(pad.CategoryID)
 	}
 
 	data, err := json.Marshal(token)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal struct to json: %w", err)
 	}
 
 	return base64.RawURLEncoding.EncodeToString(data), nil
 }
 
 // TODO: Implement proper validation
-func isValidCatalogID(id CatalogID) (string, error) {
+func isValidCatalogID[T CatalogID](id T) (string, error) {
 	return string(id), nil
 }

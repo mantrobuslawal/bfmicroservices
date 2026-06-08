@@ -9,34 +9,33 @@ import (
 
 // Repository defines Catalogue Service persistence behaviour.
 type Repository interface {
-	ListProducts(ctx context.Context, query ListProductsFilter) ([]Product, error)
+	ListProducts(ctx context.Context, query ListQuery) ([]Product, error)
 
 	GetProduct(ctx context.Context, productID string) (Product, error)
 
-	ListCategories(ctx context.Context, query ListCategoriesFilter) ([]Category, error)
+	ListCategories(ctx context.Context, query ListQuery) ([]Category, error)
 
-	ListProductAttributeDefinitions(ctx context.Context, query ListProductAttributeDefinitionsFilter) ([]ProductAttributeDefinition, error)
+	ListProductAttributeDefinitions(ctx context.Context, query ListQuery) ([]ProductAttributeDefinition, error)
 }
 
 // Repository stores and retrieves catalogue data from MySQL.
-type Repository struct{ db *sql.DB }
+type MySQLRepository struct{ db *sql.DB }
 
-// ErrProductNotFound is returned when a product does not exist.
-var ErrProductNotFound = errors.New("product not found")
+var _ Repository = (*MySQLRepository)(nil)
 
 // NewMRepository creates a MySQL-backed catalogue repository.
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db}
+func MySQLNewRepository(db *sql.DB) *MySQLRepository {
+	return &MySQLRepository{db: db}
 }
 
 // ListProducts returns products from the catalogue database.
 //
 // Returns ErrProductNotFound when produccts not found.
 // Low-level database errors are wrapped to provide extra context.
-func (r *Repository) ListProducts(ctx context.Context, query ListProductsFilter) ([]Product, error) {
+func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]Product, error) {
 	args := []any{query.ID, query.ID}
 
-	sql := `
+	sqlText := `
 		SELECT 
 		  product_id,
 		  category_id,
@@ -54,7 +53,7 @@ func (r *Repository) ListProducts(ctx context.Context, query ListProductsFilter)
   	`
 
 	if query.Cursor != nil {
-		sql += `
+		sqlText += `
   			AND (? = TRUE OR status = 'active') 
   			AND (
 				created_at < ?
@@ -71,16 +70,16 @@ func (r *Repository) ListProducts(ctx context.Context, query ListProductsFilter)
 		)
 	}
 
-	sql += `
+	sqlText += `
 		ORDER BY created_at DESC, id DESC
 		LIMIT ?
 	`
 
 	args = append(args, query.Limit)
 
-	rows, err := r.db.QueryContext(ctx, sql, args...)
+	rows, err := r.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
-		return nil, fmt.Errof("list products: %w", err)
+		return nil, fmt.Errorf("list products: %w", err)
 	}
 	defer rows.Close()
 
@@ -115,7 +114,7 @@ func (r *Repository) ListProducts(ctx context.Context, query ListProductsFilter)
 }
 
 // GetProduct returns one product by ID, along with its variants, attributes and images.
-func (r *Repository) GetProduct(ctx context.Context, productID string) (Product, error) {
+func (r *MySQLRepository) GetProduct(ctx context.Context, productID string) (Product, error) {
 	product, err := r.getProductRow(ctx, productID)
 	if err != nil {
 		return Product{}, err
@@ -123,7 +122,7 @@ func (r *Repository) GetProduct(ctx context.Context, productID string) (Product,
 
 	variants, err := r.listProductVariants(ctx, productID)
 	if err != nil {
-		return Product{}, fmt.Error("list product variants for product %q: %w", productID, err)
+		return Product{}, fmt.Errorf("list product variants for product %q: %w", productID, err)
 	}
 
 	attributes, err := r.listProductAttributeValues(ctx, productID)
@@ -144,17 +143,17 @@ func (r *Repository) GetProduct(ctx context.Context, productID string) (Product,
 }
 
 // ListCategories returns categories from the catalogue database.
-func (r *Repository) ListCategories(ctx context.Context, query ListCategoriesFilter) ([]Category, error) {
+func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) ([]Category, error) {
 	args := []any{query.ID}
 
-	sql := `
+	sqlText := `
 	       SELECT *
 	       FROM categories
 	       WHERE (? = '' OR parent_category_id = ?)
 	`
 
 	if query.Cursor != nil {
-		sql += `
+		sqlText += `
   			AND (? = TRUE OR status = 'active') 
   			AND (
 				created_at < ?
@@ -171,14 +170,14 @@ func (r *Repository) ListCategories(ctx context.Context, query ListCategoriesFil
 		)
 	}
 
-	sql += `
+	sqlText += `
 		ORDER BY created_at DESC, id DESC
 		LIMIT ?
 	`
 
 	args = append(args, query.Limit)
 
-	rows, err := r.db.QueryContext(ctx, sql, args...)
+	rows, err := r.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +204,7 @@ func (r *Repository) ListCategories(ctx context.Context, query ListCategoriesFil
 		}
 
 		if parentCategoryID.Valid {
-			category.ParentCategoryID = &parentCategoryID.String
+			category.ParentCategoryID = CategoryID(parentCategoryID.String)
 		}
 
 		categories = append(categories, category)
@@ -219,18 +218,30 @@ func (r *Repository) ListCategories(ctx context.Context, query ListCategoriesFil
 }
 
 // ListProductAttributeDefinitons returns product attribute definitions.
-func (r *Repository) ListProductAttributeDefinitions(ctx context.Context, query ListProductAttributeDefinitionsFilter) ([]ProductAttributeDefinition, error) {
+func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, query ListQuery) ([]ProductAttributeDefinition, error) {
 
 	args := []any{query.ID}
 
-	sql := `
-		SELECT *
+	sqlText := `
+		SELECT 
+		attribute_id,
+		category_id,
+		code,
+		display_name,
+		description,
+		data_type,
+		unit,
+		is_required,
+		is_filterable,
+		is_variant_defining,
+		status,
+		created_at
 		FROM product_attribute_definitions
 		WHERE (category_id = ?)
 	`
 
 	if query.Cursor != nil {
-		sql += `
+		sqlText += `
    		AND (? = TRUE OR is_filterable = FALSE)
   		AND (? = TRUE OR status = 'active') 
   		AND (
@@ -248,7 +259,7 @@ func (r *Repository) ListProductAttributeDefinitions(ctx context.Context, query 
 		)
 	}
 
-	sql += `
+	sqlText += `
 		ORDER BY created_at DESC, id DESC
 		LIMIT ?
 	`
@@ -257,7 +268,7 @@ func (r *Repository) ListProductAttributeDefinitions(ctx context.Context, query 
 
 	productAttributeDefinitions := make([]ProductAttributeDefinition, 0)
 
-	rows, err := r.db.QueryContext(ctx, sql, args...)
+	rows, err := r.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,13 +289,11 @@ func (r *Repository) ListProductAttributeDefinitions(ctx context.Context, query 
 			&productAttributeDefinition.IsFilterable,
 			&productAttributeDefinition.IsVariantDefining,
 			&productAttributeDefinition.Status,
-			&productAttributeDefinition.CreatedAt,
-			&productAttributeDefinition.UpdatedAt,
-		); err != nil {
+			&productAttributeDefinition.CreatedAt); err != nil {
 			return nil, err
 		}
 
-		productAttributeDefinitons = append(productAttributeDefinitons, productAttributeDefinition)
+		productAttributeDefinitions = append(productAttributeDefinitions, productAttributeDefinition)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -294,7 +303,7 @@ func (r *Repository) ListProductAttributeDefinitions(ctx context.Context, query 
 	return productAttributeDefinitions, nil
 }
 
-func (r *Respository) getProductRow(ctx context.Context, productID string) (Product, error) {
+func (r *MySQLRepository) getProductRow(ctx context.Context, productID string) (Product, error) {
 	const query = `
 	SELECT
 	  product_id,
@@ -330,18 +339,18 @@ func (r *Respository) getProductRow(ctx context.Context, productID string) (Prod
 		&amountMinor,
 		&currencyCode,
 		&product.CreatedAt,
-		&productUpdatedAt,
+		&product.UpdatedAt,
 	)
 
 	if err != nil {
-		if error.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return Product{}, ErrProductNotFound
 		}
 
 		return Product{}, fmt.Errorf("query product %q: %w", productID, err)
 	}
 
-	status, err := ParseLifecycleStatus(rawStatus)
+	status, err := ParseToProductStatus(rawStatus)
 	if err != nil {
 		return Product{}, fmt.Errorf("parse product status for product %q: %w", productID, err)
 	}
@@ -357,7 +366,7 @@ func (r *Respository) getProductRow(ctx context.Context, productID string) (Prod
 	return product, nil
 }
 
-func (r *Respository) listProductVariants(ctx context.Context, productID string) ([]ProductVariant, error) {
+func (r *MySQLRepository) listProductVariants(ctx context.Context, productID string) ([]*ProductVariant, error) {
 	const query = `
 	SELECT
           variant_id,
@@ -380,13 +389,13 @@ func (r *Respository) listProductVariants(ctx context.Context, productID string)
 	}
 	defer rows.Close()
 
-	var variants []ProductVariant
+	var variants []*ProductVariant
 
 	for rows.Next() {
 		var variant ProductVariant
 		var rawStatus string
 		var priceMinor int64
-		var currenyCode string
+		var currencyCode string
 
 		if err := rows.Scan(
 			&variant.VariantID,
@@ -402,7 +411,7 @@ func (r *Respository) listProductVariants(ctx context.Context, productID string)
 			return nil, fmt.Errorf("scan product variant row: %w", err)
 		}
 
-		status, err := ParseLifecycleStatus(rawStatus)
+		status, err := ParseToProductVariantStatus(rawStatus)
 		if err != nil {
 			return nil, fmt.Errorf("parse product variant status for variant %q: %w", variant.VariantID, err)
 		}
@@ -413,7 +422,7 @@ func (r *Respository) listProductVariants(ctx context.Context, productID string)
 			CurrencyCode: currencyCode,
 		}
 
-		variants = append(variants, variant)
+		variants = append(variants, &variant)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -423,7 +432,7 @@ func (r *Respository) listProductVariants(ctx context.Context, productID string)
 	return variants, nil
 }
 
-func (r *Respository) listProductAttributeValues(ctx context.Context, productID string) ([]ProductAttributeValue, error) {
+func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, productID string) ([]*ProductAttributeValue, error) {
 	const query = `
      SELECT
         product_attribute_value_id,
@@ -448,7 +457,7 @@ func (r *Respository) listProductAttributeValues(ctx context.Context, productID 
 	}
 	defer rows.Close()
 
-	var values []ProductAttributeValue
+	var values []*ProductAttributeValue
 
 	for rows.Next() {
 		var value ProductAttributeValue
@@ -461,7 +470,7 @@ func (r *Respository) listProductAttributeValues(ctx context.Context, productID 
 		var unit sql.NullString
 
 		if err := rows.Scan(
-			&value.ProductAttributeID,
+			&value.ProductAttributeValueID,
 			&value.ProductID,
 			&variantID,
 			&value.AttributeID,
@@ -473,11 +482,12 @@ func (r *Respository) listProductAttributeValues(ctx context.Context, productID 
 			&value.CreatedAt,
 			&value.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errof("scan product attribute value row: %w", err)
+			return nil, fmt.Errorf("scan product attribute value row: %w", err)
 		}
 
 		if variantID.Valid {
-			value.VariantID = &variantID.String
+			vid := VariantID(variantID.String)
+			value.VariantID = &vid
 		}
 
 		if valueString.Valid {
@@ -485,7 +495,7 @@ func (r *Respository) listProductAttributeValues(ctx context.Context, productID 
 		}
 
 		if valueNumber.Valid {
-			value.Number = &valueNumber.String
+			value.ValueNumber = &valueNumber.String
 		}
 
 		if valueBoolean.Valid {
@@ -500,7 +510,7 @@ func (r *Respository) listProductAttributeValues(ctx context.Context, productID 
 			value.Unit = &unit.String
 		}
 
-		values = append(values, value)
+		values = append(values, &value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate product attribute value rows: %w", err)
@@ -509,7 +519,7 @@ func (r *Respository) listProductAttributeValues(ctx context.Context, productID 
 	return values, nil
 }
 
-func (r *Respository) listProductImages(ctx context.Context, productID string) ([]ProductImage, error) {
+func (r *MySQLRepository) listProductImages(ctx context.Context, productID string) ([]*ProductImage, error) {
 	const query = `
 	   SELECT
 	     image_id,
@@ -517,9 +527,6 @@ func (r *Respository) listProductImages(ctx context.Context, productID string) (
              url,
              alt_text,
              display_order,
-             is_primary,
-             created_at,
-             updated_at
            FROM product_images
            WHERE product_id = ?
            ORDER BY display_order ASC, image_id ASC   
@@ -531,7 +538,7 @@ func (r *Respository) listProductImages(ctx context.Context, productID string) (
 	}
 	defer rows.Close()
 
-	var images []ProductImage
+	var images []*ProductImage
 
 	for rows.Next() {
 		var image ProductImage
@@ -539,17 +546,14 @@ func (r *Respository) listProductImages(ctx context.Context, productID string) (
 		if err := rows.Scan(
 			&image.ImageID,
 			&image.ProductID,
-			&image.URL,
-			&image.AlText,
+			&image.Url,
+			&image.AltText,
 			&image.DisplayOrder,
-			&image.IsPrimary,
-			&image.CreatedAt,
-			&image.UpdateAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan product image row: %w", err)
 		}
 
-		images = append(images, image)
+		images = append(images, &image)
 	}
 
 	if err := rows.Err(); err != nil {
