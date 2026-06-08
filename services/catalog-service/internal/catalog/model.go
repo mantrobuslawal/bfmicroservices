@@ -89,7 +89,7 @@ type ProductVariant struct {
 	UpdatedAt   time.Time
 }
 
-// ProductAttributeDefintion defines an attribute that is
+// ProductAttributeDefinition defines an attribute that is
 // valid for a category
 type ProductAttributeDefinition struct {
 	AttributeID       AttributeID
@@ -104,7 +104,7 @@ type ProductAttributeDefinition struct {
 	IsVariantDefining bool
 	Options           []*ProductAttributeOption
 	Status            ProductAttributeDefinitionStatus
-	CreatedAt         time.Time // used for paignation
+	CreatedAt         time.Time // used for pagination
 }
 
 // ProductAttributeOption represents a controlled allowed

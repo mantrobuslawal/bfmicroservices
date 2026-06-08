@@ -23,8 +23,8 @@ type MySQLRepository struct{ db *sql.DB }
 
 var _ Repository = (*MySQLRepository)(nil)
 
-// NewMRepository creates a MySQL-backed catalogue repository.
-func MySQLNewRepository(db *sql.DB) *MySQLRepository {
+// NewMySQLRepository creates a MySQL-backed catalogue repository.
+func NewMySQLRepository(db *sql.DB) *MySQLRepository {
 	return &MySQLRepository{db: db}
 }
 
@@ -33,7 +33,11 @@ func MySQLNewRepository(db *sql.DB) *MySQLRepository {
 // Returns ErrProductNotFound when produccts not found.
 // Low-level database errors are wrapped to provide extra context.
 func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]Product, error) {
-	args := []any{query.ID, query.ID}
+	includeInactive := false
+	if len(query.FilterOptions) > 0 {
+		includeInactive = query.FilterOptions[0]
+	}
+	args := []any{query.ID, query.ID, includeInactive}
 
 	sqlText := `
 		SELECT 
@@ -63,7 +67,6 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
 
 		args = append(
 			args,
-			query.FilterOptions[0],
 			query.Cursor.CreatedAt,
 			query.Cursor.CreatedAt,
 			query.Cursor.ID,
@@ -144,7 +147,11 @@ func (r *MySQLRepository) GetProduct(ctx context.Context, productID ProductID) (
 
 // ListCategories returns categories from the catalogue database.
 func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) ([]Category, error) {
-	args := []any{query.ID, query.ID}
+	includeInactive := false
+	if len(query.FilterOptions) > 0 {
+		includeInactive = query.FilterOptions[0]
+	}
+	args := []any{query.ID, query.ID, includeInactive}
 
 	sqlText := `
 	       SELECT 
@@ -172,7 +179,6 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 
 		args = append(
 			args,
-			query.FilterOptions[0],
 			query.Cursor.CreatedAt,
 			query.Cursor.CreatedAt,
 			query.Cursor.ID,
@@ -229,8 +235,18 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 
 // ListProductAttributeDefinitons returns product attribute definitions.
 func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, query ListQuery) ([]ProductAttributeDefinition, error) {
+	includeInactive := false
+	isFilterable := false
 
-	args := []any{query.ID}
+	if len(query.FilterOptions) > 0 {
+		includeInactive = query.FilterOptions[0]
+	}
+
+	if len(query.FilterOptions) > 1 {
+		isFilterable = query.FilterOptions[1]
+	}
+
+	args := []any{query.ID, isFilterable, includeInactive}
 
 	sqlText := `
 		SELECT 
@@ -261,8 +277,6 @@ func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, q
 
 		args = append(
 			args,
-			query.FilterOptions[1],
-			query.FilterOptions[0],
 			query.Cursor.CreatedAt,
 			query.Cursor.CreatedAt,
 			query.Cursor.ID,
