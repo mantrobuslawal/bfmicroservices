@@ -10,13 +10,43 @@ type Money struct {
 	CurrencyCode string
 }
 
-// CatalogID models the product,Attribute, Sku, category and partentCategory Id fields.
-type CatalogID string
+// ProductID represents a catalog product identifier.
+type ProductID string
+
+// ImageID represents a catalog product image identifier.
+type ImageID string
+
+// ProductAttributeValueID represents the identifier of a product attribute value.
+type ProductAttributeValueID string
+
+// Sku represents the a product's SKU.
+type Sku string
+
+// CategoryID represents a catalog category identifier.
+type CategoryID string
+
+// AttributeID represents a catalog product attribute identifier.
+type AttributeID string
+
+// OptionID represents a catalog product attribute option identifier.
+type OptionID string
+
+// CatalogID interface represents various CatalogID types.
+type CatalogID interface {
+	ProductID |
+		CategoryID |
+		ImageID |
+		VariantID |
+		AttributeID |
+		OptionID |
+		Sku |
+		ProductAttributeValueID
+}
 
 // Product is the internal domain representation of a catalogue product.
 type Product struct {
-	ProductID   CatalogID
-	CategoryID  CatalogID
+	ProductID   ProductID
+	CategoryID  CategoryID
 	Name        string
 	Slug        string
 	Description string
@@ -27,89 +57,92 @@ type Product struct {
 	UpdatedAt   time.Time
 	Variants    []*ProductVariant
 	Attributes  []*ProductAttributeValue
-        Images      []*ProductImage
+	Images      []*ProductImage
 }
 
 // Category is the internal domain representation of a product category.
 type Category struct {
-	CategoryID        CatalogID
-	ParentCategoryID  CatalogID
-	Name              string
-	Slug              string
-	Description       string
-	Status            CategoryStatus
+	CategoryID       CategoryID
+	ParentCategoryID CategoryID
+	Name             string
+	Slug             string
+	Description      string
+	Status           CategoryStatus
 	DisplayOrder     int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
 
-
 // ProductVariant represents a purchaseable product variation.
-type ProductVariant struct{
-	VariantID CatalogID
-        ProductID CatalogID
-        Sku       CatalogID
-        VariantName string
-        Status  ProductVariantStatus
-        Price   Money
-	Attributes []*ProductAttributeValue
-	CreatedAt time.Time
-	UpdatedAt time.Time 
+type ProductVariant struct {
+	VariantID   VariantID
+	ProductID   ProductID
+	Sku         Sku
+	VariantName string
+	Status      ProductVariantStatus
+	Price       Money
+	Attributes  []*ProductAttributeValue
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // ProductAttributeDefintion defines an attribute that is
 // valid for a category
 type ProductAttributeDefinition struct {
-	AttributeID CatalogID
-	CategoryID CatalogID
-	Code string
-	DisplayName string
-	Description string
-	DataType ProductAttributeDataType
-	Unit string
-	IsRequired bool
-	IsFilterable bool
+	AttributeID       AttributeID
+	CategoryID        CategoryID
+	Code              string
+	DisplayName       string
+	Description       string
+	DataType          ProductAttributeDataType
+	Unit              string
+	IsRequired        bool
+	IsFilterable      bool
 	IsVariantDefining bool
-	Options []*ProductAttributeOption
-	Status ProductAttributeDefinitionStatus
+	Options           []*ProductAttributeOption
+	Status            ProductAttributeDefinitionStatus
 }
 
 // ProductAttributeOption represents a controlled allowed
 // value for an attribute definition.
 type ProductAttributeOption struct {
-	OptionID CatalogID
-	Value	string
-	DisplayName string
+	OptionID     OptionID
+	Value        string
+	DisplayName  string
 	DisplayOrder int
-	Status 	ProductAttributeOptionStatus
+	Status       ProductAttributeOptionStatus
 }
 
 // ProductAttributeValue represents a product-specific or
 // a variant-specific value for a defined attribute.
 type ProductAttributeValue struct {
-	AttributeID  CatalogID
-	Code string
-	DisplayName string
-	DataType ProductAttributeDataType
-	Value *ProductAttributeValue
-	ValueOptions []string
-	Unit string
-}
+	ProductAttributeValueID ProductAttributeValueID
+	ProductID               ProductID
+	VariantID               *VariantID
+	AttributeID             AttributeID
 
+	ValueString  *string
+	ValueNumber  *string
+	ValueBoolean *bool
+	ValueJSON    []byte
+	Unit         *string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
 
 // ProductImage represents customer-facing catalogue imagery.
 type ProductImage struct {
-	ImageID CatalogID
-	ProductID string
-	Url string
-	AltText string
+	ImageID      ImageID
+	ProductID    string
+	Url          string
+	AltText      string
 	DisplayOrder int
 }
 
-
 // ListProductsFilter defines filter for product listing.
 type ListProductsFilter struct {
-	CategoryID      CatalogID
+	CategoryID      CategoryID
 	IncludeInactive bool
 	PageSize        int
 	PageToken       string
@@ -117,19 +150,19 @@ type ListProductsFilter struct {
 
 // ListCategoriesFilter defines filter for category listing.
 type ListCategoriesFilter struct {
-	ParentCategoryID CatalogID
+	ParentCategoryID CategoryID
 	IncludeInactive  bool
 	PageSize         int
 	PageToken        string
 }
 
-// ListProductAttributeDefinitionFilter defines filter for 
+// ListProductAttributeDefinitionFilter defines filter for
 // product attribute definitions.
 type ListProductAttributeDefinitionFilter struct {
 	// Required category ID.
-	CategoryID CatalogID
-	IsFilterable bool
+	CategoryID      CategoryID
+	IsFilterable    bool
 	IncludeInactive bool
-        PageSize int
-	PageToken string	
+	PageSize        int
+	PageToken       string
 }

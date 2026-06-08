@@ -7,141 +7,84 @@ import (
 	"fmt"
 )
 
-var ErrNotFound = errors.New("catalogue record not found")
-
 // Repository defines Catalogue Service persistence behaviour.
 type Repository interface {
-	ListProducts(ctx context.Context, filter ListProductsFilter) ([]Product, error)
+	ListProducts(ctx context.Context, query ListProductsFilter) ([]Product, error)
 
 	GetProduct(ctx context.Context, productID string) (Product, error)
-	
-	ListCategories(ctx context.Context, filter ListCategoriesFilter) ([]Category, error)
-	
-	ListProductAttributeDefinitions(ctx context.Context, filter ListProductAttributeDefinitionsFilter)
-	 ([]ProductAttributeDefinition, error)
+
+	ListCategories(ctx context.Context, query ListCategoriesFilter) ([]Category, error)
+
+	ListProductAttributeDefinitions(ctx context.Context, query ListProductAttributeDefinitionsFilter) ([]ProductAttributeDefinition, error)
 }
 
-// MySQLRepository implements Repository using MySQL.
-type MySQLRepository struct {
-	db *sql.DB
-}
+// Repository stores and retrieves catalogue data from MySQL.
+type Repository struct{ db *sql.DB }
 
-// NewMySQLRepository creates a MySQL-backed catalogue repository.
-func NewMySQLRepository(db *sql.DB) *MySQLRepository {
-	return &MySQLRepository{db: db}
-}
+// ErrProductNotFound is returned when a product does not exist.
+var ErrProductNotFound = errors.New("product not found")
 
-
-// ListProductAttributeDefinitons returns product attribute definitions
-// from the catalogue database.
-func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, filter ListProductAttributeDefinitionsFilter) 
-			  ([] ProductAttributeDefinition, error) {
-	query := `
-SELECT
-  attribute_id,
-  category_id,
-  code,
-  display_name,
-  COALESCE(description, ''),
-  data_type,
-  unit,
-  is_required,
-  is_filterable,
-  is_variant_defining,
-  status,
-  created_at,
-  updated_at
-FROM product_attribute_definitions
-WHERE (category_id = ?)
-  AND (? = TRUE OR is_filterable = FALSE)
-  AND (? = TRUE OR status = 'active') 
-ORDER BY created_at DESC`
-
-	rows, err := r.db.QueryContext(
-		ctx,
-		query,
-		filter.CategoryID,
-		filter.FilterableOnly,
-		filter.IncludeInactive,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list product attribute definitions: %w", err)
-	}
-	defer rows.Close()
-
-	prodAttributeDefs := make([]ProductAttributeDefinition, 0)
-
-	for rows.Next() {
-		var prodAttributeDef ProductAttributeDefinition
-
-		if err := rows.Scan(
-			&prodAttributeDef.AttributeID,
-			&prodAttributeDef.CategoryID,
-			&prodAttributeDef.Code,
-			&prodAttributeDef.DisplayName,
-			&prodAttributeDef.Description,
-			&prodAttributeDef.DataType,
-			&prodAttributeDef.Unit,
-			&prodAttributeDef.IsRequired,
-			&prodAttributeDef.IsFilterable,
-			&prodAttributeDef.IsVariantDefining,
-			&prodAttributeDef.Status,
-			&prodAttributeDef.CreatedAt,
-			&prodAttributeDef.UpdatedAt,
-                 );  err != nil {
-			return nil, fmt.Errorf("scan product: %w", err)
-		}
-
-		prodAttributeDefs = append(prodAttributeDefs, prodAttributeDef)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate product attribute definitons: %w", err)
-	}
-
-	return prodAttributeDefs, nil
+// NewMRepository creates a MySQL-backed catalogue repository.
+func NewRepository(db *sql.DB) *Repository {
+	return &Repository{db: db}
 }
 
 // ListProducts returns products from the catalogue database.
-func (r *MySQLRepository) ListProducts(ctx context.Context, filter ListProductsFilter) ([]Product, error) {
-	limit := normaliseLimit(filter.Limit)
-	offset := normaliseOffset(filter.Offset)
+//
+// Returns ErrProductNotFound when produccts not found.
+// Low-level database errors are wrapped to provide extra context.
+func (r *Repository) ListProducts(ctx context.Context, query ListProductsFilter) ([]Product, error) {
+	args := []any{query.ID, query.ID}
 
-	query := `
-SELECT
-  product_id,
-  category_id,
-  name,
-  slug,
-  COALESCE(description, ''),
-  COALESCE(brand, ''),
-  status,
-  base_price_minor,
-  currency_code,
-  created_at,
-  updated_at
-FROM products
-WHERE (? = '' OR category_id = ?)
-  AND (? = TRUE OR status = 'active')
-ORDER BY created_at DESC
-LIMIT ? OFFSET ?`
+	sql := `
+		SELECT 
+		  product_id,
+		  category_id,
+		  name,
+		  slug,
+		  description,
+		  brand,
+		  status,
+		  base_price_minor,
+		  currency_code,
+		  created_at,
+		  updated_at
+		FROM products
+		WHERE (? = '' OR category_id = ?)
+  	`
 
-	rows, err := r.db.QueryContext(
-		ctx,
-		query,
-		filter.CategoryID,
-		filter.CategoryID,
-		filter.IncludeInactive,
-		limit,
-		offset,
-	)
+	if query.Cursor != nil {
+		sql += `
+  			AND (? = TRUE OR status = 'active') 
+  			AND (
+				created_at < ?
+				OR (created_at = ? AND id < ?)
+	  		)
+		`
+
+		args = append(
+			args,
+			query.FilterOptions[0],
+			query.Cursor.CreatedAt,
+			query.Cursor.CreatedAt,
+			query.Cursor.ID,
+		)
+	}
+
+	sql += `
+		ORDER BY created_at DESC, id DESC
+		LIMIT ?
+	`
+
+	args = append(args, query.Limit)
+
+	rows, err := r.db.QueryContext(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list products: %w", err)
+		return nil, fmt.Errof("list products: %w", err)
 	}
 	defer rows.Close()
 
 	products := make([]Product, 0)
-
 	for rows.Next() {
 		var product Product
 
@@ -158,96 +101,86 @@ LIMIT ? OFFSET ?`
 			&product.CreatedAt,
 			&product.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan product: %w", err)
+			return nil, fmt.Errorf("scan product row: %w", err)
 		}
 
 		products = append(products, product)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate products: %w", err)
+		return nil, fmt.Errorf("iterate product rows: %w", err)
 	}
 
 	return products, nil
 }
 
-// GetProduct returns one product by ID.
-func (r *MySQLRepository) GetProduct(ctx context.Context, productID string) (Product, error) {
-	query := `
-SELECT
-  product_id,
-  category_id,
-  name,
-  slug,
-  COALESCE(description, ''),
-  COALESCE(brand, ''),
-  status,
-  base_price_minor,
-  currency_code,
-  created_at,
-  updated_at
-FROM products
-WHERE product_id = ?
-LIMIT 1`
-
-	var product Product
-
-	err := r.db.QueryRowContext(ctx, query, productID).Scan(
-		&product.ProductID,
-		&product.CategoryID,
-		&product.Name,
-		&product.Slug,
-		&product.Description,
-		&product.Brand,
-		&product.Status,
-		&product.BasePrice.AmountMinor,
-		&product.BasePrice.CurrencyCode,
-		&product.CreatedAt,
-		&product.UpdatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Product{}, ErrNotFound
-	}
+// GetProduct returns one product by ID, along with its variants, attributes and images.
+func (r *Repository) GetProduct(ctx context.Context, productID string) (Product, error) {
+	product, err := r.getProductRow(ctx, productID)
 	if err != nil {
-		return Product{}, fmt.Errorf("get product: %w", err)
+		return Product{}, err
 	}
+
+	variants, err := r.listProductVariants(ctx, productID)
+	if err != nil {
+		return Product{}, fmt.Error("list product variants for product %q: %w", productID, err)
+	}
+
+	attributes, err := r.listProductAttributeValues(ctx, productID)
+	if err != nil {
+		return Product{}, fmt.Errorf("list product attribute values for %q: %w", productID, err)
+	}
+
+	images, err := r.listProductImages(ctx, productID)
+	if err != nil {
+		return Product{}, fmt.Errorf("list product images for product %q: %w", productID, err)
+	}
+
+	product.Variants = variants
+	product.Attributes = attributes
+	product.Images = images
 
 	return product, nil
 }
 
 // ListCategories returns categories from the catalogue database.
-func (r *MySQLRepository) ListCategories(ctx context.Context, filter ListCategoriesFilter) ([]Category, error) {
-	limit := normaliseLimit(filter.Limit)
-	offset := normaliseOffset(filter.Offset)
+func (r *Repository) ListCategories(ctx context.Context, query ListCategoriesFilter) ([]Category, error) {
+	args := []any{query.ID}
 
-	query := `
-SELECT
-  category_id,
-  parent_category_id,
-  name,
-  slug,
-  COALESCE(description, ''),
-  status,
-  display_order,
-  created_at,
-  updated_at
-FROM categories
-WHERE (? = '' OR parent_category_id = ?)
-  AND (? = TRUE OR status = 'active')
-ORDER BY display_order ASC, name ASC
-LIMIT ? OFFSET ?`
+	sql := `
+	       SELECT *
+	       FROM categories
+	       WHERE (? = '' OR parent_category_id = ?)
+	`
 
-	rows, err := r.db.QueryContext(
-		ctx,
-		query,
-		filter.ParentCategoryID,
-		filter.ParentCategoryID,
-		filter.IncludeInactive,
-		limit,
-		offset,
-	)
+	if query.Cursor != nil {
+		sql += `
+  			AND (? = TRUE OR status = 'active') 
+  			AND (
+				created_at < ?
+				OR (created_at = ? AND id < ?)
+	  		)
+		`
+
+		args = append(
+			args,
+			query.FilterOptions[0],
+			query.Cursor.CreatedAt,
+			query.Cursor.CreatedAt,
+			query.Cursor.ID,
+		)
+	}
+
+	sql += `
+		ORDER BY created_at DESC, id DESC
+		LIMIT ?
+	`
+
+	args = append(args, query.Limit)
+
+	rows, err := r.db.QueryContext(ctx, sql, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list categories: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -268,7 +201,7 @@ LIMIT ? OFFSET ?`
 			&category.CreatedAt,
 			&category.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan category: %w", err)
+			return nil, err
 		}
 
 		if parentCategoryID.Valid {
@@ -279,25 +212,349 @@ LIMIT ? OFFSET ?`
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate categories: %w", err)
+		return nil, err
 	}
 
 	return categories, nil
 }
 
-func normaliseLimit(limit int) int {
-	if limit <= 0 {
-		return 20
+// ListProductAttributeDefinitons returns product attribute definitions.
+func (r *Repository) ListProductAttributeDefinitions(ctx context.Context, query ListProductAttributeDefinitionsFilter) ([]ProductAttributeDefinition, error) {
+
+	args := []any{query.ID}
+
+	sql := `
+		SELECT *
+		FROM product_attribute_definitions
+		WHERE (category_id = ?)
+	`
+
+	if query.Cursor != nil {
+		sql += `
+   		AND (? = TRUE OR is_filterable = FALSE)
+  		AND (? = TRUE OR status = 'active') 
+  		AND (
+			created_at < ?
+			OR (created_at = ? AND id < ?)
+	  	)`
+
+		args = append(
+			args,
+			query.FilterOptions[1],
+			query.FilterOptions[0],
+			query.Cursor.CreatedAt,
+			query.Cursor.CreatedAt,
+			query.Cursor.ID,
+		)
 	}
-	if limit > 100 {
-		return 100
+
+	sql += `
+		ORDER BY created_at DESC, id DESC
+		LIMIT ?
+	`
+
+	args = append(args, query.Limit)
+
+	productAttributeDefinitions := make([]ProductAttributeDefinition, 0)
+
+	rows, err := r.db.QueryContext(ctx, sql, args...)
+	if err != nil {
+		return nil, err
 	}
-	return limit
+	defer rows.Close()
+
+	for rows.Next() {
+		var productAttributeDefinition ProductAttributeDefinition
+
+		if err := rows.Scan(
+			&productAttributeDefinition.AttributeID,
+			&productAttributeDefinition.CategoryID,
+			&productAttributeDefinition.Code,
+			&productAttributeDefinition.DisplayName,
+			&productAttributeDefinition.Description,
+			&productAttributeDefinition.DataType,
+			&productAttributeDefinition.Unit,
+			&productAttributeDefinition.IsRequired,
+			&productAttributeDefinition.IsFilterable,
+			&productAttributeDefinition.IsVariantDefining,
+			&productAttributeDefinition.Status,
+			&productAttributeDefinition.CreatedAt,
+			&productAttributeDefinition.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		productAttributeDefinitons = append(productAttributeDefinitons, productAttributeDefinition)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return productAttributeDefinitions, nil
 }
 
-func normaliseOffset(offset int) int {
-	if offset < 0 {
-		return 0
+func (r *Respository) getProductRow(ctx context.Context, productID string) (Product, error) {
+	const query = `
+	SELECT
+	  product_id,
+	  category_id,
+	  name,
+ 	  slug,
+	  description,
+	  brand,
+	  status,
+	  base_price_minor,
+	  currency_code,
+ 	  created_at,
+          upddated_at,
+       FROM products
+       WHERE product_id = ?    
+  `
+
+	var product Product
+	var rawStatus string
+	var description sql.NullString
+	var brand sql.NullString
+	var amountMinor int64
+	var currencyCode string
+
+	err := r.db.QueryRowContext(ctx, query, productID).Scan(
+		&product.ProductID,
+		&product.CategoryID,
+		&product.Name,
+		&product.Slug,
+		&description,
+		&brand,
+		&rawStatus,
+		&amountMinor,
+		&currencyCode,
+		&product.CreatedAt,
+		&productUpdatedAt,
+	)
+
+	if err != nil {
+		if error.Is(err, sql.ErrNoRows) {
+			return Product{}, ErrProductNotFound
+		}
+
+		return Product{}, fmt.Errorf("query product %q: %w", productID, err)
 	}
-	return offset
+
+	status, err := ParseLifecycleStatus(rawStatus)
+	if err != nil {
+		return Product{}, fmt.Errorf("parse product status for product %q: %w", productID, err)
+	}
+
+	product.Status = status
+	product.Description = description.String
+	product.Brand = brand.String
+	product.BasePrice = Money{
+		AmountMinor:  amountMinor,
+		CurrencyCode: currencyCode,
+	}
+
+	return product, nil
+}
+
+func (r *Respository) listProductVariants(ctx context.Context, productID string) ([]ProductVariant, error) {
+	const query = `
+	SELECT
+          variant_id,
+          product_id,
+          sku,
+          variant_name,
+          status,
+          price_minor,
+          currency_code,
+          created_at,
+          updated_at
+        FROM product_variants
+	WHERE product_id = ?
+        ORDER BY variant_name ASC, variant_id ASC
+   `
+
+	rows, err := r.db.QueryContext(ctx, query, productID)
+	if err != nil {
+		return nil, fmt.Errorf("query product variants: %w", err)
+	}
+	defer rows.Close()
+
+	var variants []ProductVariant
+
+	for rows.Next() {
+		var variant ProductVariant
+		var rawStatus string
+		var priceMinor int64
+		var currenyCode string
+
+		if err := rows.Scan(
+			&variant.VariantID,
+			&variant.ProductID,
+			&variant.Sku,
+			&variant.VariantName,
+			&rawStatus,
+			&priceMinor,
+			&currencyCode,
+			&variant.CreatedAt,
+			&variant.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan product variant row: %w", err)
+		}
+
+		status, err := ParseLifecycleStatus(rawStatus)
+		if err != nil {
+			return nil, fmt.Errorf("parse product variant status for variant %q: %w", variant.VariantID, err)
+		}
+
+		variant.Status = status
+		variant.Price = Money{
+			AmountMinor:  priceMinor,
+			CurrencyCode: currencyCode,
+		}
+
+		variants = append(variants, variant)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate product variant rows: %w", err)
+	}
+
+	return variants, nil
+}
+
+func (r *Respository) listProductAttributeValues(ctx context.Context, productID string) ([]ProductAttributeValue, error) {
+	const query = `
+     SELECT
+        product_attribute_value_id,
+        product_id,
+        variant_id,
+        attribute_id,
+        value_string,
+        CAST(value_number AS CHAR),
+        value_boolean,
+        value_json,
+        unit,
+        created_at,
+        update_at
+     FROM product_attribute_values
+     WHERE product_id = ?
+     ORDER BY attribute_id ASC, variant_id ASC, product_attribute_value_id ASC 	
+  `
+
+	rows, err := r.db.QueryContext(ctx, query, productID)
+	if err != nil {
+		return nil, fmt.Errorf("query product attribute values: %w", err)
+	}
+	defer rows.Close()
+
+	var values []ProductAttributeValue
+
+	for rows.Next() {
+		var value ProductAttributeValue
+
+		var variantID sql.NullString
+		var valueString sql.NullString
+		var valueNumber sql.NullString
+		var valueBoolean sql.NullBool
+		var valueJSON []byte
+		var unit sql.NullString
+
+		if err := rows.Scan(
+			&value.ProductAttributeID,
+			&value.ProductID,
+			&variantID,
+			&value.AttributeID,
+			&valueString,
+			&valueNumber,
+			&valueBoolean,
+			&valueJSON,
+			&unit,
+			&value.CreatedAt,
+			&value.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errof("scan product attribute value row: %w", err)
+		}
+
+		if variantID.Valid {
+			value.VariantID = &variantID.String
+		}
+
+		if valueString.Valid {
+			value.ValueString = &valueString.String
+		}
+
+		if valueNumber.Valid {
+			value.Number = &valueNumber.String
+		}
+
+		if valueBoolean.Valid {
+			value.ValueBoolean = &valueBoolean.Bool
+		}
+
+		if len(valueJSON) > 0 {
+			value.ValueJSON = valueJSON
+		}
+
+		if unit.Valid {
+			value.Unit = &unit.String
+		}
+
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate product attribute value rows: %w", err)
+	}
+
+	return values, nil
+}
+
+func (r *Respository) listProductImages(ctx context.Context, productID string) ([]ProductImage, error) {
+	const query = `
+	   SELECT
+	     image_id,
+             product_id,
+             url,
+             alt_text,
+             display_order,
+             is_primary,
+             created_at,
+             updated_at
+           FROM product_images
+           WHERE product_id = ?
+           ORDER BY display_order ASC, image_id ASC   
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, productID)
+	if err != nil {
+		return nil, fmt.Errorf("query product images: %w", err)
+	}
+	defer rows.Close()
+
+	var images []ProductImage
+
+	for rows.Next() {
+		var image ProductImage
+
+		if err := rows.Scan(
+			&image.ImageID,
+			&image.ProductID,
+			&image.URL,
+			&image.AlText,
+			&image.DisplayOrder,
+			&image.IsPrimary,
+			&image.CreatedAt,
+			&image.UpdateAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan product image row: %w", err)
+		}
+
+		images = append(images, image)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate product image rows: %w", err)
+	}
+
+	return images, nil
 }
