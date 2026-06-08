@@ -50,11 +50,11 @@ func (r *MySQLRepository) ListProducts(ctx context.Context, query ListQuery) ([]
 		  updated_at
 		FROM products
 		WHERE (? = '' OR category_id = ?)
+		AND (? = TRUE OR status = 'active') 
   	`
 
 	if query.Cursor != nil {
 		sqlText += `
-  			AND (? = TRUE OR status = 'active') 
   			AND (
 				created_at < ?
 				OR (created_at = ? AND product_id < ?)
@@ -144,7 +144,7 @@ func (r *MySQLRepository) GetProduct(ctx context.Context, productID ProductID) (
 
 // ListCategories returns categories from the catalogue database.
 func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) ([]Category, error) {
-	args := []any{query.ID}
+	args := []any{query.ID, query.ID}
 
 	sqlText := `
 	       SELECT 
@@ -159,11 +159,11 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 		   updated_at
 	       FROM categories
 	       WHERE (? = '' OR parent_category_id = ?)
+		   AND (? = TRUE OR status = 'active') 
 	`
 
 	if query.Cursor != nil {
 		sqlText += `
-  			AND (? = TRUE OR status = 'active') 
   			AND (
 				created_at < ?
 				OR (created_at = ? AND category_id < ?)
@@ -213,7 +213,8 @@ func (r *MySQLRepository) ListCategories(ctx context.Context, query ListQuery) (
 		}
 
 		if parentCategoryID.Valid {
-			category.ParentCategoryID = CategoryID(parentCategoryID.String)
+			parentId := CategoryID(parentCategoryID.String)
+			category.ParentCategoryID = &parentId
 		}
 
 		categories = append(categories, category)
@@ -247,12 +248,12 @@ func (r *MySQLRepository) ListProductAttributeDefinitions(ctx context.Context, q
 		created_at
 		FROM product_attribute_definitions
 		WHERE (category_id = ?)
+		AND (? = FALSE OR is_filterable = TRUE)
+  		AND (? = TRUE OR status = 'active') 
 	`
 
 	if query.Cursor != nil {
 		sqlText += `
-   		AND (? = TRUE OR is_filterable = FALSE)
-  		AND (? = TRUE OR status = 'active') 
   		AND (
 			created_at < ?
 			OR (created_at = ? AND attribute_id < ?)
@@ -454,7 +455,7 @@ func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, produc
         value_json,
         unit,
         created_at,
-        update_at
+        updated_at
      FROM product_attribute_values
      WHERE product_id = ?
      ORDER BY attribute_id ASC, variant_id ASC, product_attribute_value_id ASC 	

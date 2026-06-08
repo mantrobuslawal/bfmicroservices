@@ -489,12 +489,12 @@ func TestMySQLRepository_ListCategoriesReturnsCategories(t *testing.T) {
 		t.Fatalf("len(categories) = %d, want 2", len(categories))
 	}
 
-	if categories[0].ParentCategoryID != "" {
-		t.Fatalf("first ParentCategoryID = %q, want empty", categories[0].ParentCategoryID)
+	if categories[0].ParentCategoryID != nil {
+		t.Fatalf("first ParentCategoryID = %v, want empty", categories[0].ParentCategoryID)
 	}
 
-	if categories[1].ParentCategoryID != CategoryID("cat_lighting") {
-		t.Fatalf("second ParentCategoryID = %q, want cat_lighting", categories[1].ParentCategoryID)
+	if *categories[1].ParentCategoryID != CategoryID("cat_lighting") {
+		t.Fatalf("second ParentCategoryID = %v, want cat_lighting", categories[1].ParentCategoryID)
 	}
 
 	if categories[0].Status != CategoryStatusActive {

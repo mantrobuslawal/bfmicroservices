@@ -62,7 +62,7 @@ func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (L
 	}
 
 	var cursor *catalogCursor
-	if strings.Trim(input.PageToken, " ") != "" {
+	if strings.TrimSpace(input.PageToken) != "" {
 		cursor, err = decodeCursor(input.PageToken)
 		if err != nil {
 			return ListResult[Product]{}, fmt.Errorf("invalid page token: %w", err)
@@ -114,7 +114,7 @@ func (s *Service) GetProduct(ctx context.Context, productID ProductID) (Product,
 
 	product, err := s.repository.GetProduct(ctx, ProductID(id))
 	if err != nil {
-		return Product{}, ErrProductNotFound
+		return Product{}, fmt.Errorf("get product %q: %w", id, err)
 	}
 
 	return product, nil
@@ -129,7 +129,7 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 	}
 
 	var cursor *catalogCursor
-	if strings.Trim(input.PageToken, " ") != "" {
+	if strings.TrimSpace(input.PageToken) != "" {
 		cursor, err = decodeCursor(input.PageToken)
 		if err != nil {
 			return ListResult[Category]{}, fmt.Errorf("invalid page token: %w", err)
@@ -149,7 +149,7 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 		Cursor:        cursor,
 	})
 	if err != nil {
-		return ListResult[Category]{}, nil
+		return ListResult[Category]{}, fmt.Errorf("list categories: %w", err)
 	}
 
 	nextToken := ""
@@ -160,7 +160,7 @@ func (s *Service) ListCategories(ctx context.Context, input ListCategoriesFilter
 		last := categories[len(categories)-1]
 		nextToken, err = encodeCursor(last)
 		if err != nil {
-			return ListResult[Category]{}, nil
+			return ListResult[Category]{}, fmt.Errorf("create next page token: %w", err)
 		}
 	}
 
@@ -179,7 +179,7 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input Lis
 	}
 
 	var cursor *catalogCursor
-	if strings.Trim(input.PageToken, "") != "" {
+	if strings.TrimSpace(input.PageToken) != "" {
 		cursor, err = decodeCursor(input.PageToken)
 		if err != nil {
 			return ListResult[ProductAttributeDefinition]{}, fmt.Errorf("invalid page token: %w", err)
@@ -198,7 +198,7 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input Lis
 		Cursor:        cursor,
 	})
 	if err != nil {
-		return ListResult[ProductAttributeDefinition]{}, nil
+		return ListResult[ProductAttributeDefinition]{}, fmt.Errorf("list product attribute definitions: %w", err)
 	}
 
 	nextToken := ""
@@ -209,7 +209,7 @@ func (s *Service) ListProductAttributeDefinitions(ctx context.Context, input Lis
 		last := attributeDefinitions[len(attributeDefinitions)-1]
 		nextToken, err = encodeCursor(last)
 		if err != nil {
-			return ListResult[ProductAttributeDefinition]{}, nil
+			return ListResult[ProductAttributeDefinition]{}, fmt.Errorf("create next page token: %w", err)
 		}
 	}
 
@@ -273,7 +273,7 @@ func encodeCursor[T CatalogQueryResult](c T) (string, error) {
 	pad, ok := any(c).(ProductAttributeDefinition)
 	if ok {
 		token.CreatedAt = pad.CreatedAt
-		token.ID = string(pad.CategoryID)
+		token.ID = string(pad.AttributeID)
 	}
 
 	data, err := json.Marshal(token)

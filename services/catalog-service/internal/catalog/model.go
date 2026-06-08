@@ -66,7 +66,7 @@ type Product struct {
 // Category is the internal domain representation of a product category.
 type Category struct {
 	CategoryID       CategoryID
-	ParentCategoryID CategoryID
+	ParentCategoryID *CategoryID
 	Name             string
 	Slug             string
 	Description      string
@@ -138,7 +138,7 @@ type ProductAttributeValue struct {
 // ProductImage represents customer-facing catalogue imagery.
 type ProductImage struct {
 	ImageID      ImageID
-	ProductID    string
+	ProductID    ProductID
 	Url          string
 	AltText      string
 	DisplayOrder int

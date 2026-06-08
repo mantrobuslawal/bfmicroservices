@@ -32,7 +32,7 @@ type ProductStatus string
 // Returns an ErrInvalidLifecycleStatus error when the input string cannot
 // be matched to a valid LifecycleStatus.
 func ParseToProductStatus(status string) (ProductStatus, error) {
-	status = strings.Trim(status, " ")
+	status = strings.TrimSpace(status)
 	switch status {
 	case "draft":
 		return ProductStatusDraft, nil
@@ -92,7 +92,7 @@ func (c CategoryStatus) String() string {
 // Returns an ErrInvalidLifecycleStatus error when the input string cannot
 // be matched to a valid LifecycleStatus.
 func ParseToCategoryStatus(status string) (CategoryStatus, error) {
-	status = strings.Trim(status, " ")
+	status = strings.TrimSpace(status)
 	switch status {
 	case "draft":
 		return CategoryStatusDraft, nil
@@ -124,7 +124,7 @@ const (
 // Returns an ErrInvalidLifecycleStatus error when the input string cannot
 // be matched to a valid LifecycleStatus.
 func ParseToProductVariantStatus(status string) (ProductVariantStatus, error) {
-	status = strings.Trim(status, " ")
+	status = strings.TrimSpace(status)
 	switch status {
 	case "draft":
 		return ProductVariantStatusDraft, nil
@@ -166,7 +166,7 @@ const (
 // Returns an ErrInvalidLifecycleStatus error when the input string cannot
 // be matched to a valid LifecycleStatus.
 func ParseToProductAttributeDefinitionStatus(status string) (ProductAttributeDefinitionStatus, error) {
-	status = strings.Trim(status, " ")
+	status = strings.TrimSpace(status)
 	switch status {
 	case "draft":
 		return ProductAttributeDefinitionStatusDraft, nil
@@ -208,7 +208,7 @@ const (
 // Returns an ErrInvalidLifecycleStatus error when the input string cannot
 // be matched to a valid LifecycleStatus.
 func ParseToProductAttributeOptionStatus(status string) (ProductAttributeOptionStatus, error) {
-	status = strings.Trim(status, " ")
+	status = strings.TrimSpace(status)
 	switch status {
 	case "draft":
 		return ProductAttributeOptionsDraft, nil
