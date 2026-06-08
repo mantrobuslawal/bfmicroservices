@@ -11,10 +11,10 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-func newMockRepository(t *testing.T) (*MySQLRepository, sqlmock.Sqlmock, func()) {
+func newMockMySQLRepository(t *testing.T) (*MySQLRepository, sqlmock.Sqlmock, func()) {
 	t.Helper()
 
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	if err != nil {
 		t.Fatalf("create sqlmock database: %v", err)
 	}
@@ -31,10 +31,33 @@ func newMockRepository(t *testing.T) (*MySQLRepository, sqlmock.Sqlmock, func())
 		}
 	}
 
-	return &MySQLRepository{db: db}, mock, cleanup
+	return NewMySQLRepository(db), mock, cleanup
 }
 
-func productColumns() []string {
+func testTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		t.Fatalf("parse time %q: %v", value, err)
+	}
+
+	return parsed
+}
+
+func stringPtr(value string) *string {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func quoteSQLPattern(query string) string {
+	return regexp.QuoteMeta(query)
+}
+
+func productRowColumns() []string {
 	return []string{
 		"product_id",
 		"category_id",
@@ -50,7 +73,7 @@ func productColumns() []string {
 	}
 }
 
-func productVariantColumns() []string {
+func productVariantRowColumns() []string {
 	return []string{
 		"variant_id",
 		"product_id",
@@ -64,7 +87,7 @@ func productVariantColumns() []string {
 	}
 }
 
-func productAttributeValueColumns() []string {
+func productAttributeValueRowColumns() []string {
 	return []string{
 		"product_attribute_value_id",
 		"product_id",
@@ -80,7 +103,7 @@ func productAttributeValueColumns() []string {
 	}
 }
 
-func productImageColumns() []string {
+func productImageRowColumns() []string {
 	return []string{
 		"image_id",
 		"product_id",
@@ -90,7 +113,7 @@ func productImageColumns() []string {
 	}
 }
 
-func categoryColumns() []string {
+func categoryRowColumns() []string {
 	return []string{
 		"category_id",
 		"parent_category_id",
@@ -104,7 +127,7 @@ func categoryColumns() []string {
 	}
 }
 
-func attributeDefinitionColumns() []string {
+func productAttributeDefinitionRowColumns() []string {
 	return []string{
 		"attribute_id",
 		"category_id",
@@ -121,29 +144,18 @@ func attributeDefinitionColumns() []string {
 	}
 }
 
-func mustParseTime(t *testing.T, value string) time.Time {
-	t.Helper()
-
-	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
-		t.Fatalf("parse time %q: %v", value, err)
-	}
-
-	return parsed
-}
-
 func TestMySQLRepository_ListProductsReturnsProducts(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
-	createdAt := mustParseTime(t, "2026-06-08T10:00:00Z")
-	updatedAt := mustParseTime(t, "2026-06-08T11:00:00Z")
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
 
-	rows := sqlmock.NewRows(productColumns()).
+	rows := sqlmock.NewRows(productRowColumns()).
 		AddRow(
-			"prod_001",
+			"prod_gopher_lamp",
 			"cat_lighting",
 			"Gopher Desk Lamp",
 			"gopher-desk-lamp",
@@ -156,7 +168,7 @@ func TestMySQLRepository_ListProductsReturnsProducts(t *testing.T) {
 			updatedAt,
 		).
 		AddRow(
-			"prod_002",
+			"prod_rob_pike_tapestry",
 			"cat_wall_decor",
 			"Rob Pike Wall Tapestry",
 			"rob-pike-wall-tapestry",
@@ -169,97 +181,287 @@ func TestMySQLRepository_ListProductsReturnsProducts(t *testing.T) {
 			updatedAt,
 		)
 
-	mock.ExpectQuery(regexp.QuoteMeta(`
-		SELECT
-			product_id,
-			category_id,
-			name,
-			slug,
-			description,
-			brand,
-			status,
-			base_price_minor,
-			currency_code,
-			created_at,
-			updated_at
-		FROM products
-		WHERE (? = '' OR category_id = ?)
-		ORDER BY created_at DESC, product_id DESC
-		LIMIT ?
-	`)).
-		WithArgs("", "", 20).
+	mock.ExpectQuery("FROM products").
+		WithArgs("", "", false, 20).
 		WillReturnRows(rows)
 
-	products, err := repo.ListProducts(context.Background(), ListQuery{
-		ID:    "",
-		Limit: 20,
+	products, err := repository.ListProducts(context.Background(), ListQuery{
+		ID:            "",
+		FilterOptions: []bool{false},
+		Limit:         20,
+		Cursor:        nil,
 	})
 	if err != nil {
 		t.Fatalf("ListProducts() error = %v, want nil", err)
 	}
 
-	if len(products) != 2 {
-		t.Fatalf("len(products) = %d, want 2", len(products))
+	if got, want := len(products), 2; got != want {
+		t.Fatalf("len(products) = %d, want %d", got, want)
 	}
 
-	if products[0].ProductID != ProductID("prod_001") {
-		t.Fatalf("first ProductID = %q, want prod_001", products[0].ProductID)
+	first := products[0]
+
+	if got, want := first.ProductID, ProductID("prod_gopher_lamp"); got != want {
+		t.Fatalf("first.ProductID = %q, want %q", got, want)
 	}
 
-	if products[0].CategoryID != CategoryID("cat_lighting") {
-		t.Fatalf("first CategoryID = %q, want cat_lighting", products[0].CategoryID)
+	if got, want := first.CategoryID, CategoryID("cat_lighting"); got != want {
+		t.Fatalf("first.CategoryID = %q, want %q", got, want)
 	}
 
-	if products[0].Status != ProductStatusActive {
-		t.Fatalf("first Status = %q, want %q", products[0].Status, ProductStatusActive)
+	if got, want := first.Name, "Gopher Desk Lamp"; got != want {
+		t.Fatalf("first.Name = %q, want %q", got, want)
 	}
 
-	if products[0].BasePrice.AmountMinor != 4999 {
-		t.Fatalf("first AmountMinor = %d, want 4999", products[0].BasePrice.AmountMinor)
+	if got, want := first.Slug, "gopher-desk-lamp"; got != want {
+		t.Fatalf("first.Slug = %q, want %q", got, want)
 	}
 
-	if products[0].BasePrice.CurrencyCode != "GBP" {
-		t.Fatalf("first CurrencyCode = %q, want GBP", products[0].BasePrice.CurrencyCode)
+	if first.Description == nil || *first.Description != "A cheerful lamp for late-night debugging." {
+		t.Fatalf("first.Description = %v, want populated description", first.Description)
+	}
+
+	if first.Brand == nil || *first.Brand != "Borough" {
+		t.Fatalf("first.Brand = %v, want Borough", first.Brand)
+	}
+
+	if got, want := first.Status, ProductStatusActive; got != want {
+		t.Fatalf("first.Status = %q, want %q", got, want)
+	}
+
+	if got, want := first.BasePrice.AmountMinor, int64(4999); got != want {
+		t.Fatalf("first.BasePrice.AmountMinor = %d, want %d", got, want)
+	}
+
+	if got, want := first.BasePrice.CurrencyCode, "GBP"; got != want {
+		t.Fatalf("first.BasePrice.CurrencyCode = %q, want %q", got, want)
+	}
+
+	if !first.CreatedAt.Equal(createdAt) {
+		t.Fatalf("first.CreatedAt = %v, want %v", first.CreatedAt, createdAt)
+	}
+
+	if !first.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("first.UpdatedAt = %v, want %v", first.UpdatedAt, updatedAt)
+	}
+}
+
+func TestMySQLRepository_ListProductsHandlesNullableDescriptionAndBrand(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
+
+	rows := sqlmock.NewRows(productRowColumns()).
+		AddRow(
+			"prod_plain_mug",
+			"cat_homeware",
+			"Plain Debug Mug",
+			"plain-debug-mug",
+			nil,
+			nil,
+			"active",
+			int64(1299),
+			"GBP",
+			createdAt,
+			updatedAt,
+		)
+
+	mock.ExpectQuery("FROM products").
+		WithArgs("cat_homeware", "cat_homeware", false, 10).
+		WillReturnRows(rows)
+
+	products, err := repository.ListProducts(context.Background(), ListQuery{
+		ID:            "cat_homeware",
+		FilterOptions: []bool{false},
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("ListProducts() error = %v, want nil", err)
+	}
+
+	if got, want := len(products), 1; got != want {
+		t.Fatalf("len(products) = %d, want %d", got, want)
+	}
+
+	if products[0].Description != nil {
+		t.Fatalf("Description = %v, want nil", products[0].Description)
+	}
+
+	if products[0].Brand != nil {
+		t.Fatalf("Brand = %v, want nil", products[0].Brand)
+	}
+}
+
+func TestMySQLRepository_ListProductsWithCursor(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	cursorTime := testTime(t, "2026-06-08T10:00:00Z")
+
+	rows := sqlmock.NewRows(productRowColumns())
+
+	mock.ExpectQuery("FROM products").
+		WithArgs(
+			"cat_lighting",
+			"cat_lighting",
+			true,
+			cursorTime,
+			cursorTime,
+			"prod_cursor",
+			5,
+		).
+		WillReturnRows(rows)
+
+	products, err := repository.ListProducts(context.Background(), ListQuery{
+		ID:            "cat_lighting",
+		FilterOptions: []bool{true},
+		Limit:         5,
+		Cursor: &catalogCursor{
+			CreatedAt: cursorTime,
+			ID:        "prod_cursor",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ListProducts() error = %v, want nil", err)
+	}
+
+	if got, want := len(products), 0; got != want {
+		t.Fatalf("len(products) = %d, want %d", got, want)
+	}
+}
+
+func TestMySQLRepository_ListProductsDefaultsMissingFilterOptionsToActiveOnly(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	rows := sqlmock.NewRows(productRowColumns())
+
+	mock.ExpectQuery("FROM products").
+		WithArgs("", "", false, 10).
+		WillReturnRows(rows)
+
+	_, err := repository.ListProducts(context.Background(), ListQuery{
+		ID:            "",
+		FilterOptions: nil,
+		Limit:         10,
+	})
+	if err != nil {
+		t.Fatalf("ListProducts() error = %v, want nil", err)
+	}
+}
+
+func TestMySQLRepository_ListProductsReturnsScanErrorForInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
+
+	rows := sqlmock.NewRows(productRowColumns()).
+		AddRow(
+			"prod_invalid",
+			"cat_lighting",
+			"Invalid Status Product",
+			"invalid-status-product",
+			nil,
+			nil,
+			"nonsense",
+			int64(1000),
+			"GBP",
+			createdAt,
+			updatedAt,
+		)
+
+	mock.ExpectQuery("FROM products").
+		WithArgs("", "", false, 10).
+		WillReturnRows(rows)
+
+	_, err := repository.ListProducts(context.Background(), ListQuery{
+		FilterOptions: []bool{false},
+		Limit:         10,
+	})
+	if err == nil {
+		t.Fatal("ListProducts() error = nil, want invalid status error")
 	}
 }
 
 func TestMySQLRepository_ListProductsWrapsQueryError(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
-	dbErr := errors.New("database unavailable")
+	databaseErr := errors.New("database unavailable")
 
 	mock.ExpectQuery("FROM products").
-		WithArgs("", "", 20).
-		WillReturnError(dbErr)
+		WithArgs("", "", false, 20).
+		WillReturnError(databaseErr)
 
-	_, err := repo.ListProducts(context.Background(), ListQuery{
-		ID:    "",
-		Limit: 20,
+	_, err := repository.ListProducts(context.Background(), ListQuery{
+		ID:            "",
+		FilterOptions: []bool{false},
+		Limit:         20,
 	})
 	if err == nil {
 		t.Fatal("ListProducts() error = nil, want error")
 	}
 
-	if !errors.Is(err, dbErr) {
+	if !errors.Is(err, databaseErr) {
 		t.Fatalf("ListProducts() error = %v, want wrapped database error", err)
+	}
+}
+
+func TestMySQLRepository_ListProductsWrapsRowsError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	rowsErr := errors.New("rows iteration failed")
+
+	rows := sqlmock.NewRows(productRowColumns()).
+		RowError(0, rowsErr)
+
+	mock.ExpectQuery("FROM products").
+		WithArgs("", "", false, 20).
+		WillReturnRows(rows)
+
+	_, err := repository.ListProducts(context.Background(), ListQuery{
+		ID:            "",
+		FilterOptions: []bool{false},
+		Limit:         20,
+	})
+	if err == nil {
+		t.Fatal("ListProducts() error = nil, want rows error")
+	}
+
+	if !errors.Is(err, rowsErr) {
+		t.Fatalf("ListProducts() error = %v, want wrapped rows error", err)
 	}
 }
 
 func TestMySQLRepository_GetProductReturnsProductWithChildren(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
-	createdAt := mustParseTime(t, "2026-06-08T10:00:00Z")
-	updatedAt := mustParseTime(t, "2026-06-08T11:00:00Z")
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
 
-	productRows := sqlmock.NewRows(productColumns()).
+	productRows := sqlmock.NewRows(productRowColumns()).
 		AddRow(
-			"prod_001",
+			"prod_gopher_lamp",
 			"cat_lighting",
 			"Gopher Desk Lamp",
 			"gopher-desk-lamp",
@@ -273,30 +475,43 @@ func TestMySQLRepository_GetProductReturnsProductWithChildren(t *testing.T) {
 		)
 
 	mock.ExpectQuery("FROM products").
-		WithArgs("prod_001").
+		WithArgs("prod_gopher_lamp").
 		WillReturnRows(productRows)
 
-	variantRows := sqlmock.NewRows(productVariantColumns()).
+	variantRows := sqlmock.NewRows(productVariantRowColumns()).
 		AddRow(
-			"var_001",
-			"prod_001",
-			"BFS-GO-LAMP-001",
-			"Default",
+			"var_blue",
+			"prod_gopher_lamp",
+			"BFS-GO-LAMP-BLUE",
+			"Blue shade",
 			"active",
-			int64(4999),
+			int64(5499),
+			"GBP",
+			createdAt,
+			updatedAt,
+		).
+		AddRow(
+			"var_green",
+			"prod_gopher_lamp",
+			"BFS-GO-LAMP-GREEN",
+			"Green shade",
+			"inactive",
+			int64(5499),
 			"GBP",
 			createdAt,
 			updatedAt,
 		)
 
 	mock.ExpectQuery("FROM product_variants").
-		WithArgs("prod_001").
+		WithArgs("prod_gopher_lamp").
 		WillReturnRows(variantRows)
 
-	attrRows := sqlmock.NewRows(productAttributeValueColumns()).
+	jsonPayload := []byte(`{"lumens":800,"power":"USB-C"}`)
+
+	attributeRows := sqlmock.NewRows(productAttributeValueRowColumns()).
 		AddRow(
-			"pav_001",
-			"prod_001",
+			"pav_material",
+			"prod_gopher_lamp",
 			nil,
 			"attr_material",
 			"steel",
@@ -308,111 +523,198 @@ func TestMySQLRepository_GetProductReturnsProductWithChildren(t *testing.T) {
 			updatedAt,
 		).
 		AddRow(
-			"pav_002",
-			"prod_001",
-			"var_001",
-			"attr_colour",
-			"blue",
+			"pav_dimmable",
+			"prod_gopher_lamp",
+			nil,
+			"attr_dimmable",
+			nil,
+			nil,
+			true,
+			nil,
+			nil,
+			createdAt,
+			updatedAt,
+		).
+		AddRow(
+			"pav_weight",
+			"prod_gopher_lamp",
+			nil,
+			"attr_weight",
+			nil,
+			"1.2500",
+			nil,
+			nil,
+			"kg",
+			createdAt,
+			updatedAt,
+		).
+		AddRow(
+			"pav_specs",
+			"prod_gopher_lamp",
+			"var_blue",
+			"attr_specs",
 			nil,
 			nil,
 			nil,
+			jsonPayload,
 			nil,
 			createdAt,
 			updatedAt,
 		)
 
 	mock.ExpectQuery("FROM product_attribute_values").
-		WithArgs("prod_001").
-		WillReturnRows(attrRows)
+		WithArgs("prod_gopher_lamp").
+		WillReturnRows(attributeRows)
 
-	imageRows := sqlmock.NewRows(productImageColumns()).
+	imageRows := sqlmock.NewRows(productImageRowColumns()).
 		AddRow(
-			"img_001",
-			"prod_001",
-			"https://example.test/gopher-lamp.png",
+			"img_primary",
+			"prod_gopher_lamp",
+			"https://example.test/gopher-lamp-primary.png",
 			"Gopher Desk Lamp on a desk",
 			10,
+		).
+		AddRow(
+			"img_detail",
+			"prod_gopher_lamp",
+			"https://example.test/gopher-lamp-detail.png",
+			nil,
+			20,
 		)
 
 	mock.ExpectQuery("FROM product_images").
-		WithArgs("prod_001").
+		WithArgs("prod_gopher_lamp").
 		WillReturnRows(imageRows)
 
-	product, err := repo.GetProduct(context.Background(), "prod_001")
+	product, err := repository.GetProduct(context.Background(), ProductID("prod_gopher_lamp"))
 	if err != nil {
 		t.Fatalf("GetProduct() error = %v, want nil", err)
 	}
 
-	if product.ProductID != ProductID("prod_001") {
-		t.Fatalf("ProductID = %q, want prod_001", product.ProductID)
+	if got, want := product.ProductID, ProductID("prod_gopher_lamp"); got != want {
+		t.Fatalf("ProductID = %q, want %q", got, want)
 	}
 
-	if len(product.Variants) != 1 {
-		t.Fatalf("len(Variants) = %d, want 1", len(product.Variants))
+	if got, want := len(product.Variants), 2; got != want {
+		t.Fatalf("len(Variants) = %d, want %d", got, want)
 	}
 
-	if product.Variants[0].Status != ProductVariantStatusActive {
-		t.Fatalf("variant Status = %q, want %q", product.Variants[0].Status, ProductVariantStatusActive)
+	if got, want := product.Variants[0].VariantID, VariantID("var_blue"); got != want {
+		t.Fatalf("first variant ID = %q, want %q", got, want)
 	}
 
-	if len(product.Attributes) != 2 {
-		t.Fatalf("len(Attributes) = %d, want 2", len(product.Attributes))
+	if got, want := product.Variants[0].Status, ProductVariantStatusActive; got != want {
+		t.Fatalf("first variant status = %q, want %q", got, want)
+	}
+
+	if got, want := product.Variants[0].Price.AmountMinor, int64(5499); got != want {
+		t.Fatalf("first variant price amount = %d, want %d", got, want)
+	}
+
+	if got, want := len(product.Attributes), 4; got != want {
+		t.Fatalf("len(Attributes) = %d, want %d", got, want)
 	}
 
 	if product.Attributes[0].VariantID != nil {
 		t.Fatalf("first attribute VariantID = %v, want nil", product.Attributes[0].VariantID)
 	}
 
-	if product.Attributes[1].VariantID == nil || *product.Attributes[1].VariantID != VariantID("var_001") {
-		t.Fatalf("second attribute VariantID = %v, want var_001", product.Attributes[1].VariantID)
-	}
-
 	if product.Attributes[0].ValueString == nil || *product.Attributes[0].ValueString != "steel" {
 		t.Fatalf("first attribute ValueString = %v, want steel", product.Attributes[0].ValueString)
 	}
 
-	if len(product.Images) != 1 {
-		t.Fatalf("len(Images) = %d, want 1", len(product.Images))
+	if product.Attributes[1].ValueBoolean == nil || *product.Attributes[1].ValueBoolean != true {
+		t.Fatalf("second attribute ValueBoolean = %v, want true", product.Attributes[1].ValueBoolean)
 	}
 
-	if product.Images[0].DisplayOrder != 10 {
-		t.Fatalf("image DisplayOrder = %d, want 10", product.Images[0].DisplayOrder)
+	if product.Attributes[2].ValueNumber == nil || *product.Attributes[2].ValueNumber != "1.2500" {
+		t.Fatalf("third attribute ValueNumber = %v, want 1.2500", product.Attributes[2].ValueNumber)
+	}
+
+	if product.Attributes[2].Unit == nil || *product.Attributes[2].Unit != "kg" {
+		t.Fatalf("third attribute Unit = %v, want kg", product.Attributes[2].Unit)
+	}
+
+	if product.Attributes[3].VariantID == nil || *product.Attributes[3].VariantID != VariantID("var_blue") {
+		t.Fatalf("fourth attribute VariantID = %v, want var_blue", product.Attributes[3].VariantID)
+	}
+
+	if string(product.Attributes[3].ValueJSON) != string(jsonPayload) {
+		t.Fatalf("fourth attribute ValueJSON = %s, want %s", product.Attributes[3].ValueJSON, jsonPayload)
+	}
+
+	if got, want := len(product.Images), 2; got != want {
+		t.Fatalf("len(Images) = %d, want %d", got, want)
+	}
+
+	if got, want := product.Images[0].ProductID, ProductID("prod_gopher_lamp"); got != want {
+		t.Fatalf("first image ProductID = %q, want %q", got, want)
+	}
+
+	if product.Images[0].AltText == nil || *product.Images[0].AltText != "Gopher Desk Lamp on a desk" {
+		t.Fatalf("first image AltText = %v, want populated alt text", product.Images[0].AltText)
+	}
+
+	if product.Images[1].AltText != nil {
+		t.Fatalf("second image AltText = %v, want nil", product.Images[1].AltText)
 	}
 }
 
 func TestMySQLRepository_GetProductReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
 	mock.ExpectQuery("FROM products").
 		WithArgs("prod_missing").
 		WillReturnError(sql.ErrNoRows)
 
-	_, err := repo.GetProduct(context.Background(), "prod_missing")
+	_, err := repository.GetProduct(context.Background(), ProductID("prod_missing"))
 	if !errors.Is(err, ErrProductNotFound) {
 		t.Fatalf("GetProduct() error = %v, want ErrProductNotFound", err)
 	}
 }
 
-func TestMySQLRepository_GetProductWrapsChildQueryError(t *testing.T) {
+func TestMySQLRepository_GetProductWrapsProductQueryError(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
-	createdAt := mustParseTime(t, "2026-06-08T10:00:00Z")
-	updatedAt := mustParseTime(t, "2026-06-08T11:00:00Z")
+	databaseErr := errors.New("connection lost")
 
-	productRows := sqlmock.NewRows(productColumns()).
+	mock.ExpectQuery("FROM products").
+		WithArgs("prod_gopher_lamp").
+		WillReturnError(databaseErr)
+
+	_, err := repository.GetProduct(context.Background(), ProductID("prod_gopher_lamp"))
+	if err == nil {
+		t.Fatal("GetProduct() error = nil, want error")
+	}
+
+	if !errors.Is(err, databaseErr) {
+		t.Fatalf("GetProduct() error = %v, want wrapped database error", err)
+	}
+}
+
+func TestMySQLRepository_GetProductWrapsVariantQueryError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
+
+	productRows := sqlmock.NewRows(productRowColumns()).
 		AddRow(
-			"prod_001",
+			"prod_gopher_lamp",
 			"cat_lighting",
 			"Gopher Desk Lamp",
 			"gopher-desk-lamp",
-			"A cheerful lamp.",
-			"Borough",
+			nil,
+			nil,
 			"active",
 			int64(4999),
 			"GBP",
@@ -421,35 +723,135 @@ func TestMySQLRepository_GetProductWrapsChildQueryError(t *testing.T) {
 		)
 
 	mock.ExpectQuery("FROM products").
-		WithArgs("prod_001").
+		WithArgs("prod_gopher_lamp").
 		WillReturnRows(productRows)
 
-	dbErr := errors.New("variant query failed")
+	databaseErr := errors.New("variant query failed")
 
 	mock.ExpectQuery("FROM product_variants").
-		WithArgs("prod_001").
-		WillReturnError(dbErr)
+		WithArgs("prod_gopher_lamp").
+		WillReturnError(databaseErr)
 
-	_, err := repo.GetProduct(context.Background(), "prod_001")
+	_, err := repository.GetProduct(context.Background(), ProductID("prod_gopher_lamp"))
 	if err == nil {
 		t.Fatal("GetProduct() error = nil, want error")
 	}
 
-	if !errors.Is(err, dbErr) {
+	if !errors.Is(err, databaseErr) {
 		t.Fatalf("GetProduct() error = %v, want wrapped variant query error", err)
+	}
+}
+
+func TestMySQLRepository_GetProductWrapsAttributeValueQueryError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
+
+	productRows := sqlmock.NewRows(productRowColumns()).
+		AddRow(
+			"prod_gopher_lamp",
+			"cat_lighting",
+			"Gopher Desk Lamp",
+			"gopher-desk-lamp",
+			nil,
+			nil,
+			"active",
+			int64(4999),
+			"GBP",
+			createdAt,
+			updatedAt,
+		)
+
+	mock.ExpectQuery("FROM products").
+		WithArgs("prod_gopher_lamp").
+		WillReturnRows(productRows)
+
+	mock.ExpectQuery("FROM product_variants").
+		WithArgs("prod_gopher_lamp").
+		WillReturnRows(sqlmock.NewRows(productVariantRowColumns()))
+
+	databaseErr := errors.New("attribute value query failed")
+
+	mock.ExpectQuery("FROM product_attribute_values").
+		WithArgs("prod_gopher_lamp").
+		WillReturnError(databaseErr)
+
+	_, err := repository.GetProduct(context.Background(), ProductID("prod_gopher_lamp"))
+	if err == nil {
+		t.Fatal("GetProduct() error = nil, want error")
+	}
+
+	if !errors.Is(err, databaseErr) {
+		t.Fatalf("GetProduct() error = %v, want wrapped attribute value query error", err)
+	}
+}
+
+func TestMySQLRepository_GetProductWrapsImageQueryError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
+
+	productRows := sqlmock.NewRows(productRowColumns()).
+		AddRow(
+			"prod_gopher_lamp",
+			"cat_lighting",
+			"Gopher Desk Lamp",
+			"gopher-desk-lamp",
+			nil,
+			nil,
+			"active",
+			int64(4999),
+			"GBP",
+			createdAt,
+			updatedAt,
+		)
+
+	mock.ExpectQuery("FROM products").
+		WithArgs("prod_gopher_lamp").
+		WillReturnRows(productRows)
+
+	mock.ExpectQuery("FROM product_variants").
+		WithArgs("prod_gopher_lamp").
+		WillReturnRows(sqlmock.NewRows(productVariantRowColumns()))
+
+	mock.ExpectQuery("FROM product_attribute_values").
+		WithArgs("prod_gopher_lamp").
+		WillReturnRows(sqlmock.NewRows(productAttributeValueRowColumns()))
+
+	databaseErr := errors.New("image query failed")
+
+	mock.ExpectQuery("FROM product_images").
+		WithArgs("prod_gopher_lamp").
+		WillReturnError(databaseErr)
+
+	_, err := repository.GetProduct(context.Background(), ProductID("prod_gopher_lamp"))
+	if err == nil {
+		t.Fatal("GetProduct() error = nil, want error")
+	}
+
+	if !errors.Is(err, databaseErr) {
+		t.Fatalf("GetProduct() error = %v, want wrapped image query error", err)
 	}
 }
 
 func TestMySQLRepository_ListCategoriesReturnsCategories(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
-	createdAt := mustParseTime(t, "2026-06-08T10:00:00Z")
-	updatedAt := mustParseTime(t, "2026-06-08T11:00:00Z")
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+	updatedAt := testTime(t, "2026-06-08T11:00:00Z")
 
-	rows := sqlmock.NewRows(categoryColumns()).
+	rows := sqlmock.NewRows(categoryRowColumns()).
 		AddRow(
 			"cat_lighting",
 			nil,
@@ -466,7 +868,7 @@ func TestMySQLRepository_ListCategoriesReturnsCategories(t *testing.T) {
 			"cat_lighting",
 			"Desk Lamps",
 			"desk-lamps",
-			"Desk lamps and task lighting.",
+			nil,
 			"active",
 			20,
 			createdAt,
@@ -474,43 +876,147 @@ func TestMySQLRepository_ListCategoriesReturnsCategories(t *testing.T) {
 		)
 
 	mock.ExpectQuery("FROM categories").
-		WithArgs("", 20).
+		WithArgs("", "", false, 20).
 		WillReturnRows(rows)
 
-	categories, err := repo.ListCategories(context.Background(), ListQuery{
-		ID:    "",
-		Limit: 20,
+	categories, err := repository.ListCategories(context.Background(), ListQuery{
+		ID:            "",
+		FilterOptions: []bool{false},
+		Limit:         20,
 	})
 	if err != nil {
 		t.Fatalf("ListCategories() error = %v, want nil", err)
 	}
 
-	if len(categories) != 2 {
-		t.Fatalf("len(categories) = %d, want 2", len(categories))
+	if got, want := len(categories), 2; got != want {
+		t.Fatalf("len(categories) = %d, want %d", got, want)
 	}
 
-	if categories[0].ParentCategoryID != nil {
-		t.Fatalf("first ParentCategoryID = %v, want empty", categories[0].ParentCategoryID)
+	root := categories[0]
+
+	if got, want := root.CategoryID, CategoryID("cat_lighting"); got != want {
+		t.Fatalf("root.CategoryID = %q, want %q", got, want)
 	}
 
-	if *categories[1].ParentCategoryID != CategoryID("cat_lighting") {
-		t.Fatalf("second ParentCategoryID = %v, want cat_lighting", categories[1].ParentCategoryID)
+	if root.ParentCategoryID != nil {
+		t.Fatalf("root.ParentCategoryID = %v, want nil", root.ParentCategoryID)
 	}
 
-	if categories[0].Status != CategoryStatusActive {
-		t.Fatalf("first Status = %q, want %q", categories[0].Status, CategoryStatusActive)
+	if root.Description == nil || *root.Description != "Developer-themed lighting." {
+		t.Fatalf("root.Description = %v, want populated description", root.Description)
+	}
+
+	if got, want := root.Status, CategoryStatusActive; got != want {
+		t.Fatalf("root.Status = %q, want %q", got, want)
+	}
+
+	if got, want := root.DisplayOrder, 10; got != want {
+		t.Fatalf("root.DisplayOrder = %d, want %d", got, want)
+	}
+
+	child := categories[1]
+
+	if child.ParentCategoryID == nil || *child.ParentCategoryID != CategoryID("cat_lighting") {
+		t.Fatalf("child.ParentCategoryID = %v, want cat_lighting", child.ParentCategoryID)
+	}
+
+	if child.Description != nil {
+		t.Fatalf("child.Description = %v, want nil", child.Description)
+	}
+}
+
+func TestMySQLRepository_ListCategoriesWithCursor(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	cursorTime := testTime(t, "2026-06-08T10:00:00Z")
+
+	mock.ExpectQuery("FROM categories").
+		WithArgs(
+			"cat_lighting",
+			"cat_lighting",
+			true,
+			cursorTime,
+			cursorTime,
+			"cat_desk_lamps",
+			10,
+		).
+		WillReturnRows(sqlmock.NewRows(categoryRowColumns()))
+
+	categories, err := repository.ListCategories(context.Background(), ListQuery{
+		ID:            "cat_lighting",
+		FilterOptions: []bool{true},
+		Limit:         10,
+		Cursor: &catalogCursor{
+			CreatedAt: cursorTime,
+			ID:        "cat_desk_lamps",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ListCategories() error = %v, want nil", err)
+	}
+
+	if got, want := len(categories), 0; got != want {
+		t.Fatalf("len(categories) = %d, want %d", got, want)
+	}
+}
+
+func TestMySQLRepository_ListCategoriesDefaultsMissingFilterOptionsToActiveOnly(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	mock.ExpectQuery("FROM categories").
+		WithArgs("", "", false, 10).
+		WillReturnRows(sqlmock.NewRows(categoryRowColumns()))
+
+	_, err := repository.ListCategories(context.Background(), ListQuery{
+		ID:    "",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListCategories() error = %v, want nil", err)
+	}
+}
+
+func TestMySQLRepository_ListCategoriesWrapsQueryError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	databaseErr := errors.New("database unavailable")
+
+	mock.ExpectQuery("FROM categories").
+		WithArgs("", "", false, 20).
+		WillReturnError(databaseErr)
+
+	_, err := repository.ListCategories(context.Background(), ListQuery{
+		ID:            "",
+		FilterOptions: []bool{false},
+		Limit:         20,
+	})
+	if err == nil {
+		t.Fatal("ListCategories() error = nil, want error")
+	}
+
+	if !errors.Is(err, databaseErr) {
+		t.Fatalf("ListCategories() error = %v, want wrapped database error", err)
 	}
 }
 
 func TestMySQLRepository_ListProductAttributeDefinitionsReturnsDefinitions(t *testing.T) {
 	t.Parallel()
 
-	repo, mock, cleanup := newMockRepository(t)
+	repository, mock, cleanup := newMockMySQLRepository(t)
 	defer cleanup()
 
-	createdAt := mustParseTime(t, "2026-06-08T10:00:00Z")
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
 
-	rows := sqlmock.NewRows(attributeDefinitionColumns()).
+	rows := sqlmock.NewRows(productAttributeDefinitionRowColumns()).
 		AddRow(
 			"attr_material",
 			"cat_lighting",
@@ -524,33 +1030,209 @@ func TestMySQLRepository_ListProductAttributeDefinitionsReturnsDefinitions(t *te
 			false,
 			"active",
 			createdAt,
+		).
+		AddRow(
+			"attr_weight",
+			"cat_lighting",
+			"weight",
+			"Weight",
+			nil,
+			"number",
+			"kg",
+			false,
+			true,
+			false,
+			"active",
+			createdAt.Add(-time.Minute),
 		)
 
 	mock.ExpectQuery("FROM product_attribute_definitions").
-		WithArgs("cat_lighting", 20).
+		WithArgs("cat_lighting", false, false, 20).
 		WillReturnRows(rows)
 
-	definitions, err := repo.ListProductAttributeDefinitions(context.Background(), ListQuery{
-		ID:    "cat_lighting",
-		Limit: 20,
+	definitions, err := repository.ListProductAttributeDefinitions(context.Background(), ListQuery{
+		ID:            "cat_lighting",
+		FilterOptions: []bool{false, false},
+		Limit:         20,
 	})
 	if err != nil {
 		t.Fatalf("ListProductAttributeDefinitions() error = %v, want nil", err)
 	}
 
-	if len(definitions) != 1 {
-		t.Fatalf("len(definitions) = %d, want 1", len(definitions))
+	if got, want := len(definitions), 2; got != want {
+		t.Fatalf("len(definitions) = %d, want %d", got, want)
 	}
 
-	if definitions[0].AttributeID != AttributeID("attr_material") {
-		t.Fatalf("AttributeID = %q, want attr_material", definitions[0].AttributeID)
+	first := definitions[0]
+
+	if got, want := first.AttributeID, AttributeID("attr_material"); got != want {
+		t.Fatalf("first.AttributeID = %q, want %q", got, want)
 	}
 
-	if definitions[0].DataType != ProductAttributeTypeString {
-		t.Fatalf("DataType = %q, want %q", definitions[0].DataType, ProductAttributeTypeString)
+	if got, want := first.CategoryID, CategoryID("cat_lighting"); got != want {
+		t.Fatalf("first.CategoryID = %q, want %q", got, want)
 	}
 
-	if definitions[0].Status != ProductAttributeDefinitionStatusActive {
-		t.Fatalf("Status = %q, want %q", definitions[0].Status, ProductAttributeDefinitionStatusActive)
+	if first.Description == nil || *first.Description != "Primary product material." {
+		t.Fatalf("first.Description = %v, want populated description", first.Description)
+	}
+
+	if got, want := first.DataType, ProductAttributeDataTypeString; got != want {
+		t.Fatalf("first.DataType = %q, want %q", got, want)
+	}
+
+	if first.Unit != nil {
+		t.Fatalf("first.Unit = %v, want nil", first.Unit)
+	}
+
+	if !first.IsRequired {
+		t.Fatal("first.IsRequired = false, want true")
+	}
+
+	if !first.IsFilterable {
+		t.Fatal("first.IsFilterable = false, want true")
+	}
+
+	if first.IsVariantDefining {
+		t.Fatal("first.IsVariantDefining = true, want false")
+	}
+
+	if got, want := first.Status, ProductAttributeDefinitionStatusActive; got != want {
+		t.Fatalf("first.Status = %q, want %q", got, want)
+	}
+
+	second := definitions[1]
+
+	if second.Description != nil {
+		t.Fatalf("second.Description = %v, want nil", second.Description)
+	}
+
+	if second.Unit == nil || *second.Unit != "kg" {
+		t.Fatalf("second.Unit = %v, want kg", second.Unit)
+	}
+
+	if got, want := second.DataType, ProductAttributeDataTypeNumber; got != want {
+		t.Fatalf("second.DataType = %q, want %q", got, want)
+	}
+}
+
+func TestMySQLRepository_ListProductAttributeDefinitionsWithFiltersAndCursor(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	cursorTime := testTime(t, "2026-06-08T10:00:00Z")
+
+	mock.ExpectQuery("FROM product_attribute_definitions").
+		WithArgs(
+			"cat_lighting",
+			true,
+			true,
+			cursorTime,
+			cursorTime,
+			"attr_material",
+			10,
+		).
+		WillReturnRows(sqlmock.NewRows(productAttributeDefinitionRowColumns()))
+
+	definitions, err := repository.ListProductAttributeDefinitions(context.Background(), ListQuery{
+		ID:            "cat_lighting",
+		FilterOptions: []bool{true, true},
+		Limit:         10,
+		Cursor: &catalogCursor{
+			CreatedAt: cursorTime,
+			ID:        "attr_material",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ListProductAttributeDefinitions() error = %v, want nil", err)
+	}
+
+	if got, want := len(definitions), 0; got != want {
+		t.Fatalf("len(definitions) = %d, want %d", got, want)
+	}
+}
+
+func TestMySQLRepository_ListProductAttributeDefinitionsDefaultsMissingFilterOptions(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	mock.ExpectQuery("FROM product_attribute_definitions").
+		WithArgs("cat_lighting", false, false, 10).
+		WillReturnRows(sqlmock.NewRows(productAttributeDefinitionRowColumns()))
+
+	_, err := repository.ListProductAttributeDefinitions(context.Background(), ListQuery{
+		ID:    "cat_lighting",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListProductAttributeDefinitions() error = %v, want nil", err)
+	}
+}
+
+func TestMySQLRepository_ListProductAttributeDefinitionsReturnsInvalidDataTypeError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	createdAt := testTime(t, "2026-06-08T10:00:00Z")
+
+	rows := sqlmock.NewRows(productAttributeDefinitionRowColumns()).
+		AddRow(
+			"attr_invalid",
+			"cat_lighting",
+			"invalid",
+			"Invalid",
+			nil,
+			"mystery",
+			nil,
+			false,
+			false,
+			false,
+			"active",
+			createdAt,
+		)
+
+	mock.ExpectQuery("FROM product_attribute_definitions").
+		WithArgs("cat_lighting", false, false, 10).
+		WillReturnRows(rows)
+
+	_, err := repository.ListProductAttributeDefinitions(context.Background(), ListQuery{
+		ID:            "cat_lighting",
+		FilterOptions: []bool{false, false},
+		Limit:         10,
+	})
+	if err == nil {
+		t.Fatal("ListProductAttributeDefinitions() error = nil, want invalid data type error")
+	}
+}
+
+func TestMySQLRepository_ListProductAttributeDefinitionsWrapsQueryError(t *testing.T) {
+	t.Parallel()
+
+	repository, mock, cleanup := newMockMySQLRepository(t)
+	defer cleanup()
+
+	databaseErr := errors.New("database unavailable")
+
+	mock.ExpectQuery("FROM product_attribute_definitions").
+		WithArgs("cat_lighting", false, false, 20).
+		WillReturnError(databaseErr)
+
+	_, err := repository.ListProductAttributeDefinitions(context.Background(), ListQuery{
+		ID:            "cat_lighting",
+		FilterOptions: []bool{false, false},
+		Limit:         20,
+	})
+	if err == nil {
+		t.Fatal("ListProductAttributeDefinitions() error = nil, want error")
+	}
+
+	if !errors.Is(err, databaseErr) {
+		t.Fatalf("ListProductAttributeDefinitions() error = %v, want wrapped database error", err)
 	}
 }
