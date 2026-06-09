@@ -159,6 +159,7 @@ type Category struct {
 	Status           ProductStatus          `protobuf:"varint,6,opt,name=status,proto3,enum=bfstore.catalog.v1.ProductStatus" json:"status,omitempty"`
 	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DisplayOrder     int32                  `protobuf:"varint,9,opt,name=display_order,json=displayOrder,proto3" json:"display_order,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -249,6 +250,13 @@ func (x *Category) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Category) GetDisplayOrder() int32 {
+	if x != nil {
+		return x.DisplayOrder
+	}
+	return 0
+}
+
 // Product represents governed product catalogue data.
 //
 // Catalogue Service is the source of truth for product identity, product
@@ -271,6 +279,7 @@ type Product struct {
 	Images        []*ProductImage          `protobuf:"bytes,10,rep,name=images,proto3" json:"images,omitempty"`
 	CreatedAt     *timestamppb.Timestamp   `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp   `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Slug          string                   `protobuf:"bytes,13,opt,name=slug,proto3" json:"slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -387,6 +396,13 @@ func (x *Product) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Product) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
 }
 
 // ProductVariant represents a purchasable variation of a product.
@@ -965,7 +981,7 @@ var File_bfstore_catalog_v1_product_proto protoreflect.FileDescriptor
 
 const file_bfstore_catalog_v1_product_proto_rawDesc = "" +
 	"\n" +
-	" bfstore/catalog/v1/product.proto\x12\x12bfstore.catalog.v1\x1a\x1dbfstore/common/v1/money.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd4\x02\n" +
+	" bfstore/catalog/v1/product.proto\x12\x12bfstore.catalog.v1\x1a\x1dbfstore/common/v1/money.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf9\x02\n" +
 	"\bCategory\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x12,\n" +
@@ -977,7 +993,8 @@ const file_bfstore_catalog_v1_product_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xc4\x04\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12#\n" +
+	"\rdisplay_order\x18\t \x01(\x05R\fdisplayOrder\"\xd8\x04\n" +
 	"\aProduct\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x1f\n" +
@@ -998,7 +1015,8 @@ const file_bfstore_catalog_v1_product_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xaf\x03\n" +
+	"updated_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x12\n" +
+	"\x04slug\x18\r \x01(\tR\x04slug\"\xaf\x03\n" +
 	"\x0eProductVariant\x12\x1d\n" +
 	"\n" +
 	"variant_id\x18\x01 \x01(\tR\tvariantId\x12\x1d\n" +

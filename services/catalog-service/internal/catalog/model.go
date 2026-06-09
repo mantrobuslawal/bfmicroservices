@@ -125,11 +125,11 @@ type ProductAttributeValue struct {
 	VariantID               *VariantID
 	AttributeID             AttributeID
 
-	ValueString  *string
-	ValueNumber  *string
+	ValueString  string
+	ValueNumber  string
 	ValueBoolean *bool
 	ValueJSON    []byte
-	Unit         *string
+	Unit         string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

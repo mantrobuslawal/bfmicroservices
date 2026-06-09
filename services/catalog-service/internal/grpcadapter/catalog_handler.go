@@ -14,7 +14,7 @@ import (
 	commonv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/common/v1"
 )
 
-// CatalogHandler implements the generated Catalogue Service gRPC interface.
+// CatalogHandler implements the generated Catalog Service gRPC interface.
 type CatalogHandler struct {
 	catalogv1.UnimplementedCatalogServiceServer
 
@@ -22,7 +22,7 @@ type CatalogHandler struct {
 	logger         *slog.Logger
 }
 
-// NewCatalogHandler creates a Catalogue Service gRPC handler.
+// NewCatalogHandler creates a Catalog Service gRPC handler.
 func NewCatalogHandler(catalogService *catalog.Service, logger *slog.Logger) *CatalogHandler {
 	return &CatalogHandler{
 		catalogService: catalogService,
@@ -31,6 +31,8 @@ func NewCatalogHandler(catalogService *catalog.Service, logger *slog.Logger) *Ca
 }
 
 // ListProducts returns collection of products matching filter criteria.
+// Products are not fully hydrated - images, variant data, product attributes etc 
+// - are not provided by this endpoint.
 func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListProductsRequest) (*catalogv1.ListProductsResponse, error) {
 	result, err := h.catalogService.ListProducts(ctx, catalog.ListProductsFilter{
     	CategoryID:       req.GetCategoryId(),
@@ -48,20 +50,21 @@ func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListPr
 		Page: &commonv1.PageResponse{
 			NextPageToken: result.NextPageToken,
 			TotalCount: 0, // Not calculated. Set to 0 as default
-		}
+		},
  	}
 
  	for _, product := range result.Products {
- 		response.Products = append(response.Products, productToProto(product))
+ 		response.Products = append(response.Products, listProductToProto(product))
  	}
 
  	return response, nil
  }
 
 // GetProduct returns single product matching requested productID.
+// This Product instance is fully hydrated - including image, variant, attributes etc.
 func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
 	productID := req.GetProductId()
-	if strings.Trim(productID) == "" {
+	if strings.TrimSpace(productID) == "" {
 		return nil, status.Error(code.INVALID_ARGUMENT, "missing product id")  
 
 	}
@@ -71,8 +74,35 @@ func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProdu
  		return nil, mapServiceError(err)
  	}
 
+	// Retrieve product attribute definitions
+	var filter catalog.ListProductAttributeDefinitionsFilter
+	
+
+	// TODO: Need to update GetProduct request proto to include attribute definition filter options !!
+	response, err := h.catalogService.ListProductAttributeDefinitions(ctx, filter{CategoryID: product.CategoryID,})
+	if err != nil {
+ 		h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
+ 		return nil, mapServiceError(err)
+ 	}
+	definitions := make([]catalog.ProductAttributeDefinition,0, len(response.Result))
+	definitions = append(definitions, response.Result...)
+
+	// This endpoint uses pagination, therefore we need to ensure we have all the definitions required
+	// to hydrate the product structure.
+	for response.NextPageToken != "" {
+		next := response.NextPageToken
+		response, err := h.catalogService.ListProductAttributeDefinitions(ctx, filter{
+			CategoryID: product.CategoryID, 
+			PageToken: next, })
+		if err != nil {
+			h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
+			return nil, mapServiceError(err)
+ 		}
+		definitions = append(definitions, response.Result...)
+	}
+
  	return &catalogv1.GetProductResponse{
- 		Product: productToProto(product),
+ 		Product: productToProto(product, definitions),
  	}, nil
  }
 
@@ -113,7 +143,7 @@ func (h *CatalogHandler)  ListProductAttributeDefinitions(ctx context.Context,
 	
 	// category ID required
 	catID := req.GetCategoryId()
-	if strings.trim(catId) == "" {
+	if strings.TrimSpace(catId) == "" {
 		return nil, status.Error(code.INVALID_ARGUMENT, "missing category id")  
 	}
 	
