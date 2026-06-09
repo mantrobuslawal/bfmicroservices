@@ -13,7 +13,7 @@ import (
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/database"
-	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpc"
+	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpcadapter"
 )
 
 func main() {
