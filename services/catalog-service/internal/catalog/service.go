@@ -157,6 +157,10 @@ func hydrateProduct(product Product, definitions []ProductAttributeDefinition) (
 	}
 
 	for _, value := range product.Attributes {
+		if value.VariantID != nil { // no nil indicates variant product details, ignore to avoid duplication
+			continue
+		}
+
 		hydrated, err := hydrateProductAttributeValue(value, definitionsByID)
 		if err != nil {
 			return ProductDetails{}, err
