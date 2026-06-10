@@ -571,11 +571,11 @@ func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, produc
 		}
 
 		if valueString.Valid {
-			value.ValueString = &valueString.String
+			value.ValueString = valueString.String
 		}
 
 		if valueNumber.Valid {
-			value.ValueNumber = &valueNumber.String
+			value.ValueNumber = valueNumber.String
 		}
 
 		if valueBoolean.Valid {
@@ -587,7 +587,7 @@ func (r *MySQLRepository) listProductAttributeValues(ctx context.Context, produc
 		}
 
 		if unit.Valid {
-			value.Unit = &unit.String
+			value.Unit = unit.String
 		}
 
 		values = append(values, &value)

@@ -8,10 +8,10 @@ import (
 )
 
 type fakeRepository struct {
-	listProductsFunc                     func(context.Context, ListQuery) ([]Product, error)
-	getProductFunc                       func(context.Context, ProductID) (Product, error)
-	listCategoriesFunc                   func(context.Context, ListQuery) ([]Category, error)
-	listProductAttributeDefinitionsFunc  func(context.Context, ListQuery) ([]ProductAttributeDefinition, error)
+	listProductsFunc                    func(context.Context, ListQuery) ([]Product, error)
+	getProductFunc                      func(context.Context, ProductID) (Product, error)
+	listCategoriesFunc                  func(context.Context, ListQuery) ([]Category, error)
+	listProductAttributeDefinitionsFunc func(context.Context, ListQuery) ([]ProductAttributeDefinition, error)
 }
 
 func (f fakeRepository) ListProducts(ctx context.Context, query ListQuery) ([]Product, error) {
@@ -60,16 +60,16 @@ func TestService_GetProductReturnsHydratedProductDetails(t *testing.T) {
 	variantID := VariantID("var_blue")
 
 	product := Product{
-		ProductID:    ProductID("prod_gopher_lamp"),
-		CategoryID:   CategoryID("cat_lighting"),
-		Name:         "Gopher Desk Lamp",
-		Slug:         "gopher-desk-lamp",
-		Description:  "A cheerful lamp for late-night debugging.",
-		Brand:        "Borough",
-		Status:       ProductStatusActive,
-		BasePrice:    Money{AmountMinor: 4999, CurrencyCode: "GBP"},
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		ProductID:   ProductID("prod_gopher_lamp"),
+		CategoryID:  CategoryID("cat_lighting"),
+		Name:        "Gopher Desk Lamp",
+		Slug:        "gopher-desk-lamp",
+		Description: "A cheerful lamp for late-night debugging.",
+		Brand:       "Borough",
+		Status:      ProductStatusActive,
+		BasePrice:   Money{AmountMinor: 4999, CurrencyCode: "GBP"},
+		CreatedAt:   createdAt,
+		UpdatedAt:   updatedAt,
 		Images: []*ProductImage{
 			{
 				ImageID:      ImageID("img_primary"),
@@ -94,20 +94,20 @@ func TestService_GetProductReturnsHydratedProductDetails(t *testing.T) {
 		Attributes: []*ProductAttributeValue{
 			{
 				ProductAttributeValueID: productLevelValueID,
-				ProductID:              ProductID("prod_gopher_lamp"),
-				AttributeID:            AttributeID("attr_material"),
-				ValueString:            "steel",
-				CreatedAt:              createdAt,
-				UpdatedAt:              updatedAt,
+				ProductID:               ProductID("prod_gopher_lamp"),
+				AttributeID:             AttributeID("attr_material"),
+				ValueString:             "steel",
+				CreatedAt:               createdAt,
+				UpdatedAt:               updatedAt,
 			},
 			{
 				ProductAttributeValueID: variantValueID,
-				ProductID:              ProductID("prod_gopher_lamp"),
-				VariantID:              &variantID,
-				AttributeID:            AttributeID("attr_colour"),
-				ValueString:            "blue",
-				CreatedAt:              createdAt,
-				UpdatedAt:              updatedAt,
+				ProductID:               ProductID("prod_gopher_lamp"),
+				VariantID:               &variantID,
+				AttributeID:             AttributeID("attr_colour"),
+				ValueString:             "blue",
+				CreatedAt:               createdAt,
+				UpdatedAt:               updatedAt,
 			},
 		},
 	}
@@ -134,7 +134,7 @@ func TestService_GetProductReturnsHydratedProductDetails(t *testing.T) {
 					Value:        "blue",
 					DisplayName:  "Blue",
 					DisplayOrder: 10,
-					Status:       ProductAttributeOptionStatusActive,
+					Status:       ProductAttributeOptionsStatusActive,
 				},
 			},
 			Status:    ProductAttributeDefinitionStatusActive,
@@ -324,9 +324,9 @@ func TestService_GetProductReturnsMissingDefinitionError(t *testing.T) {
 				Attributes: []*ProductAttributeValue{
 					{
 						ProductAttributeValueID: ProductAttributeValueID("pav_missing"),
-						ProductID:              ProductID("prod_gopher_lamp"),
-						AttributeID:            AttributeID("attr_missing"),
-						ValueString:            "unknown",
+						ProductID:               ProductID("prod_gopher_lamp"),
+						AttributeID:             AttributeID("attr_missing"),
+						ValueString:             "unknown",
 					},
 				},
 			}, nil

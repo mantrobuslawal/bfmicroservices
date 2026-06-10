@@ -198,10 +198,10 @@ type ProductAttributeOptionStatus string
 
 // Valid ProductAttrubuteOptions values.
 const (
-	ProductAttributeOptionsDraft    ProductAttributeOptionStatus = "draft"
-	ProductAttributeOptionsActive   ProductAttributeOptionStatus = "active"
-	ProductAttributeOptionsInactive ProductAttributeOptionStatus = "inactive"
-	ProductAttributeOptionsArchived ProductAttributeOptionStatus = "archived"
+	ProductAttributeOptionsStatusDraft    ProductAttributeOptionStatus = "draft"
+	ProductAttributeOptionsStatusActive   ProductAttributeOptionStatus = "active"
+	ProductAttributeOptionsStatusInactive ProductAttributeOptionStatus = "inactive"
+	ProductAttributeOptionsStatusArchived ProductAttributeOptionStatus = "archived"
 )
 
 // ParseToProductAttributeOptionStatus converts a valid string value to a LifecycleStatus.
@@ -211,13 +211,13 @@ func ParseToProductAttributeOptionStatus(status string) (ProductAttributeOptionS
 	status = strings.TrimSpace(status)
 	switch status {
 	case "draft":
-		return ProductAttributeOptionsDraft, nil
+		return ProductAttributeOptionsStatusDraft, nil
 	case "active":
-		return ProductAttributeOptionsActive, nil
+		return ProductAttributeOptionsStatusActive, nil
 	case "inactive":
-		return ProductAttributeOptionsInactive, nil
+		return ProductAttributeOptionsStatusInactive, nil
 	case "archived":
-		return ProductAttributeOptionsArchived, nil
+		return ProductAttributeOptionsStatusArchived, nil
 
 	default:
 		return "", ErrInvalidLifecycleStatus

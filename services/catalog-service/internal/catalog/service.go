@@ -186,7 +186,7 @@ func hydrateProduct(product Product, definitions []ProductAttributeDefinition) (
 				continue
 			}
 
-			if *&variant.VariantID != *value.VariantID {
+			if variant.VariantID != *value.VariantID {
 				continue
 			}
 
