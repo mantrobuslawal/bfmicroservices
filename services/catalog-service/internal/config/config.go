@@ -3,14 +3,16 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Config contains runtime configuration for Catalogue Service.
 type Config struct {
-	Environment string
-	LogLevel    string
-	GRPCPort    string
-	Database    DatabaseConfig
+	Environment          string
+	LogLevel             string
+	GRPCPort             string
+	EnableGRPCReflection bool
+	Database             DatabaseConfig
 }
 
 // DatabaseConfig contains MySQL connection configuration.
@@ -35,6 +37,7 @@ func Load() (Config, error) {
 			User:     getEnv("MYSQL_USER", "bfstore_catalog_user"),
 			Password: getEnv("MYSQL_PASSWORD", "bfstore_catalog_password"),
 		},
+		EnableGRPCReflection: loadBoolEnv("GRPC_REFLECTION_ENABLED", false),
 	}
 
 	if cfg.Database.Password == "" {
@@ -63,4 +66,20 @@ func getEnv(key string, fallback string) string {
 	}
 
 	return value
+}
+
+func loadBoolEnv(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+
+	switch strings.ToLower(value) {
+	case "true", "1", "yes", "y":
+		return true
+	case "false", "0", "no", "n":
+		return false
+	default:
+		return fallback
+	}
 }

@@ -14,6 +14,8 @@ import (
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/database"
 	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpcadapter"
+
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -45,6 +47,11 @@ func main() {
 	repository := catalog.NewMySQLRepository(db)
 	service := catalog.NewService(repository)
 	grpcServer := cataloggrpc.NewServer(service, logger)
+
+	if cfg.EnableGRPCReflection {
+		reflection.Register(grpcServer)
+		logger.Info("grpc reflection enabled")
+	}
 
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
