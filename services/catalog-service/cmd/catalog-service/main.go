@@ -14,7 +14,10 @@ import (
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/database"
 	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpcadapter"
+	cataloghealth "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/health"
 
+	grpchealth "google.golang.org/grpc/health"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -39,14 +42,31 @@ func main() {
 	}
 	defer closeDatabase(logger, db)
 
-	if err := database.Ping(ctx, db); err != nil {
-		logger.Error("database ping failed", "error", err)
+	/*
+		if err := database.Ping(ctx, db); err != nil {
+			logger.Error("database ping failed", "error", err)
+			os.Exit(1)
+		}
+	*/
+
+	healthchecker := cataloghealth.NewChecker(db)
+
+	if err := healthchecker.Ready(ctx); err != nil {
+		logger.Error("service is not ready", "error", err)
 		os.Exit(1)
 	}
 
 	repository := catalog.NewMySQLRepository(db)
 	service := catalog.NewService(repository)
 	grpcServer := cataloggrpc.NewServer(service, logger)
+
+	healthServer := grpchealth.NewServer()
+	healthv1.RegisterHealthServer(grpcServer, healthServer)
+
+	const catalogServiceName = "bfstore.catalog.v1.CatalogService"
+
+	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_SERVING)
 
 	if cfg.EnableGRPCReflection {
 		reflection.Register(grpcServer)
@@ -67,9 +87,20 @@ func main() {
 		}
 	}()
 
+	// TODO
+	/*
+		go func(){
+			ticker := time
+
+		}()
+	*/
+
 	<-ctx.Done()
 
 	logger.Info("shutdown signal received")
+
+	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
+	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
