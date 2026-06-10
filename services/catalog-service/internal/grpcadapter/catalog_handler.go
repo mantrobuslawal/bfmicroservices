@@ -2,7 +2,6 @@ package grpcadapter
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 
@@ -31,151 +30,188 @@ func NewCatalogHandler(catalogService *catalog.Service, logger *slog.Logger) *Ca
 }
 
 // ListProducts returns collection of products matching filter criteria.
-// Products are not fully hydrated - images, variant data, product attributes etc 
+// Products are not fully hydrated - images, variant data, product attributes etc
 // - are not provided by this endpoint.
 func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListProductsRequest) (*catalogv1.ListProductsResponse, error) {
-	result, err := h.catalogService.ListProducts(ctx, catalog.ListProductsFilter{
-    	CategoryID:       req.GetCategoryId(),
-    	IncludeInactive: req.GetIncludeInactive(),
- 		PageSize:           int(req.GetPage().GetPageSize()),
- 		PageToken:          req.GetPage().GetPageToken(), 	})
- 
-	if err != nil {
- 		h.logger.Error("failed to list products", "error", err)
- 		return nil, mapServiceError(err)
- 	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "nil ListProductsRequest")
 
- 	response := &catalogv1.ListProductsResponse{
- 		Products: make([]*catalogv1.Product, 0, len(result.Products)),
+	}
+
+	result, err := h.catalogService.ListProducts(ctx, catalog.ListProductsFilter{
+		CategoryID:      catalog.CategoryID(req.GetCategoryId()),
+		IncludeInactive: req.GetIncludeInactive(),
+		PageSize:        int(req.GetPage().GetPageSize()),
+		PageToken:       req.GetPage().GetPageToken()})
+
+	if err != nil {
+		h.logger.Error("failed to list products", "error", err)
+		return nil, mapServiceError(err)
+	}
+
+	products := result.Result
+
+	response := &catalogv1.ListProductsResponse{
+		Products: make([]*catalogv1.Product, 0, len(products)),
 		Page: &commonv1.PageResponse{
 			NextPageToken: result.NextPageToken,
-			TotalCount: 0, // Not calculated. Set to 0 as default
+			TotalCount:    0, // Not calculated. Set to 0 as default
 		},
- 	}
+	}
 
- 	for _, product := range result.Products {
- 		response.Products = append(response.Products, listProductToProto(product))
- 	}
+	for _, product := range products {
+		protoProduct, err := listProductToProto(&product)
+		if err != nil {
+			return nil, mapServiceError(err)
+		}
+		response.Products = append(response.Products, protoProduct)
+	}
 
- 	return response, nil
- }
+	return response, nil
+}
 
 // GetProduct returns single product matching requested productID.
 // This Product instance is fully hydrated - including image, variant, attributes etc.
 func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
-	productID := req.GetProductId()
-	if strings.TrimSpace(productID) == "" {
-		return nil, status.Error(code.INVALID_ARGUMENT, "missing product id")  
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "nil GetProductRequest")
 
 	}
-	product, err := h.catalogService.GetProduct(ctx, productID)
- 	if err != nil {
- 		h.logger.Error("failed to get product", "product_id", productID, "error", err)
- 		return nil, mapServiceError(err)
- 	}
 
-	// Retrieve product attribute definitions
-	var filter catalog.ListProductAttributeDefinitionsFilter
-	
+	productID := req.GetProductId()
+	if strings.TrimSpace(productID) == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing product id")
+
+	}
+
+	id := catalog.ProductID(productID)
+
+	product, err := h.catalogService.GetProduct(ctx, id)
+	if err != nil {
+		h.logger.Error("failed to get product", "product_id", productID, "error", err)
+		return nil, mapServiceError(err)
+	}
 
 	// TODO: Need to update GetProduct request proto to include attribute definition filter options !!
-	response, err := h.catalogService.ListProductAttributeDefinitions(ctx, filter{CategoryID: product.CategoryID,})
+	response, err := h.catalogService.ListProductAttributeDefinitions(ctx, catalog.ListProductAttributeDefinitionsFilter{CategoryID: product.CategoryID})
 	if err != nil {
- 		h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
- 		return nil, mapServiceError(err)
- 	}
-	definitions := make([]catalog.ProductAttributeDefinition,0, len(response.Result))
+		h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
+		return nil, mapServiceError(err)
+	}
+	definitions := make([]catalog.ProductAttributeDefinition, 0, len(response.Result))
 	definitions = append(definitions, response.Result...)
 
 	// This endpoint uses pagination, therefore we need to ensure we have all the definitions required
 	// to hydrate the product structure.
 	for response.NextPageToken != "" {
 		next := response.NextPageToken
-		response, err := h.catalogService.ListProductAttributeDefinitions(ctx, filter{
-			CategoryID: product.CategoryID, 
-			PageToken: next, })
+		response, err := h.catalogService.ListProductAttributeDefinitions(ctx, catalog.ListProductAttributeDefinitionsFilter{
+			CategoryID: product.CategoryID,
+			PageToken:  next})
 		if err != nil {
 			h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
 			return nil, mapServiceError(err)
- 		}
+		}
 		definitions = append(definitions, response.Result...)
 	}
 
- 	return &catalogv1.GetProductResponse{
- 		Product: productToProto(product, definitions),
- 	}, nil
- }
-
-// ListCategories returns list of product categories matching filter criteria.
-func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.ListCategoriesRequest) (*catalogv1.ListCategoriesResponse, error) {
-	result, err := h.catalogService.ListCategories(ctx, catalog.ListCategoriesFilter{
- 		ParentCategoryID: req.GetParentCategoryId(),
- 		IncludeInactive: req.GetIncludeInactive(),
- 		PageSize:           int(req.GetPage().GetPageSize()),
- 		PageToken:          req.GetPage().GetPageToken(),
- 	})
-
- 	if err != nil {
- 		h.logger.Error("failed to list categories", "error", err)
- 		return nil, mapServiceError(err)
- 	}
-
- 	response := &catalogv1.ListCategoriesResponse{
- 		Categories: make([]*catalogv1.Category, 0, len(result.Categories)),
-		Page: &commonv1.PageResponse{
-			NextPageToken: result.NextPageToken,
-			TotalCount: 0, // Not calculated - set to 0. 
-		}
- 	}
-
- 	for _, category := range result.Categories {
- 		response.Categories = append(response.Categories, categoryToProto(category))
- 	}
-
- 	return response, nil
- }
-
-// ListProductAttributeDefinitions returns list of product attribute definitions
-// matching filter criteria.
-func (h *CatalogHandler)  ListProductAttributeDefinitions(ctx context.Context, 
-	  req *catalogv1.ListProductAttributeDefinitionsRequest) 
-	(*catalogv1.ListProductAttributeDefinitionsResponse, error) {
-	
-	// category ID required
-	catID := req.GetCategoryId()
-	if strings.TrimSpace(catId) == "" {
-		return nil, status.Error(code.INVALID_ARGUMENT, "missing category id")  
-	}
-	
-	result, err := h.catalogService.ListProductAttributeDefinitons(ctx, 
-				catalog.ListProductAttributeDefinitionsFilter{
-					CategoryID: catId,
-                                        IsFilterable: req.GetFilterableOnly(),
-                                        IncludeInactive: req.GetIncludeInactive(),
-					PageSize: int(req.GetPage().GetPageSize()),	
-					PageToken: req.GetPage().GetPageToken(),
-				})
+	hydratedProduct, err := productToProto(&product, definitions)
 	if err != nil {
-		h.logger.Error("failed to list product attribute definitions", "error", err)
 		return nil, mapServiceError(err)
 	}
 
-	response := &catalogv1.ListAttributeDefinitionsResponse {
-		AttributeDefinitions: make([]*catalogv1.ProductAttributeDefinition,
-					   0, len(result.ProductAttributeDefinitions),
-		Page: &commonv1.PageResponse{
-			NextPageToken: result.NextPageToken,
-			TotalCount: 0, // Not calculated - set to 0. 
-		}),
+	return &catalogv1.GetProductResponse{
+		Product: hydratedProduct,
+	}, nil
+}
+
+// ListCategories returns list of product categories matching filter criteria.
+func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.ListCategoriesRequest) (*catalogv1.ListCategoriesResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "nil ListCategoriesRequest")
+
 	}
 
-	for _, productAttributeDefinition := range result.ProductAttributeDefinitions {
-		response.AttributeDefinitions = append(response.AttributeDefinitions, 
-			productAttributeDefinitionToProto(productAttributeDefinition))
+	result, err := h.catalogService.ListCategories(ctx, catalog.ListCategoriesFilter{
+		ParentCategoryID: catalog.CategoryID(req.GetParentCategoryId()),
+		IncludeInactive:  req.GetIncludeInactive(),
+		PageSize:         int(req.GetPage().GetPageSize()),
+		PageToken:        req.GetPage().GetPageToken(),
+	})
+
+	if err != nil {
+		h.logger.Error("failed to list categories", "error", err)
+		return nil, mapServiceError(err)
+	}
+
+	categories := result.Result
+	token := result.NextPageToken
+
+	response := &catalogv1.ListCategoriesResponse{
+		Categories: make([]*catalogv1.Category, 0, len(categories)),
+		Page: &commonv1.PageResponse{
+			NextPageToken: token,
+			TotalCount:    0, // Not calculated - set to 0.
+		},
+	}
+
+	for _, category := range categories {
+		categoryProto, err := categoryToProto(&category)
+		if err != nil {
+			return nil, mapServiceError(err)
+		}
+		response.Categories = append(response.Categories, categoryProto)
 	}
 
 	return response, nil
 }
 
+// ListProductAttributeDefinitions returns list of product attribute definitions
+// matching filter criteria.
+func (h *CatalogHandler) ListProductAttributeDefinitions(ctx context.Context,
+	req *catalogv1.ListProductAttributeDefinitionsRequest) (*catalogv1.ListProductAttributeDefinitionsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "nil ListProductAttributeDefinitions")
 
+	}
 
+	// category ID required
+	catID := req.GetCategoryId()
+	if strings.TrimSpace(catID) == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing category id")
+	}
+
+	result, err := h.catalogService.ListProductAttributeDefinitions(ctx,
+		catalog.ListProductAttributeDefinitionsFilter{
+			CategoryID:      catalog.CategoryID(catID),
+			IsFilterable:    req.GetFilterableOnly(),
+			IncludeInactive: req.GetIncludeInactive(),
+			PageSize:        int(req.GetPage().GetPageSize()),
+			PageToken:       req.GetPage().GetPageToken(),
+		})
+	if err != nil {
+		h.logger.Error("failed to list product attribute definitions", "error", err)
+		return nil, mapServiceError(err)
+	}
+
+	productAttributeDefinitions := result.Result
+
+	response := &catalogv1.ListProductAttributeDefinitionsResponse{
+		AttributeDefinitions: make([]*catalogv1.ProductAttributeDefinition, 0, len(productAttributeDefinitions)),
+		Page: &commonv1.PageResponse{
+			NextPageToken: result.NextPageToken,
+			TotalCount:    0, // Not calculated - set to 0.
+		},
+	}
+
+	for _, pad := range productAttributeDefinitions {
+		padProto, err := productAttributeDefinitionToProto(&pad)
+		if err != nil {
+			return nil, mapServiceError(err)
+		}
+
+		response.AttributeDefinitions = append(response.AttributeDefinitions, padProto)
+	}
+
+	return response, nil
+}
