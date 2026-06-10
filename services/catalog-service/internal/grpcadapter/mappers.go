@@ -82,13 +82,14 @@ func categoryToProto(category *catalog.Category) (*catalogv1.Category, error) {
 	}
 
 	response := &catalogv1.Category{
-		CategoryId:  string(category.CategoryID),
-		Name:        category.Name,
-		Slug:        category.Slug,
-		Description: category.Description,
-		Status:      status,
-		CreatedAt:   timestamppb.New(category.CreatedAt),
-		UpdatedAt:   timestamppb.New(category.UpdatedAt),
+		CategoryId:   string(category.CategoryID),
+		Name:         category.Name,
+		Slug:         category.Slug,
+		Description:  category.Description,
+		Status:       status,
+		DisplayOrder: int32(category.DisplayOrder),
+		CreatedAt:    timestamppb.New(category.CreatedAt),
+		UpdatedAt:    timestamppb.New(category.UpdatedAt),
 	}
 
 	if category.ParentCategoryID != nil {
