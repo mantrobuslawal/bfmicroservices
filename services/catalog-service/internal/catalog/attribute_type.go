@@ -5,12 +5,12 @@ type ProductAttributeDataType string
 
 // ProductAttributeDataType defined constants.
 const (
-	ProductAttributeTypeString      ProductAttributeDataType = "string"
-	ProductAttributeTypeNumber      ProductAttributeDataType = "number"
-	ProductAttributeTypeBool        ProductAttributeDataType = "boolean"
-	ProductAttributeTypeOption      ProductAttributeDataType = "option"
-	ProductAttributeTypeMultiOption ProductAttributeDataType = "multi_option"
-	ProductAttributeTypeJson        ProductAttributeDataType = "json"
+	ProductAttributeDataTypeString      ProductAttributeDataType = "string"
+	ProductAttributeDataTypeNumber      ProductAttributeDataType = "number"
+	ProductAttributeDataTypeBool        ProductAttributeDataType = "boolean"
+	ProductAttributeDataTypeOption      ProductAttributeDataType = "option"
+	ProductAttributeDataTypeMultiOption ProductAttributeDataType = "multi_option"
+	ProductAttributeDataTypeJson        ProductAttributeDataType = "json"
 )
 
 // IsValid validates whether a ProductAttributeDataType is belongs to the
@@ -18,12 +18,12 @@ const (
 // false otherwise.
 func (p ProductAttributeDataType) IsValid() bool {
 	switch p {
-	case ProductAttributeTypeString,
-		ProductAttributeTypeNumber,
-		ProductAttributeTypeBool,
-		ProductAttributeTypeOption,
-		ProductAttributeTypeMultiOption,
-		ProductAttributeTypeJson:
+	case ProductAttributeDataTypeString,
+		ProductAttributeDataTypeNumber,
+		ProductAttributeDataTypeBool,
+		ProductAttributeDataTypeOption,
+		ProductAttributeDataTypeMultiOption,
+		ProductAttributeDataTypeJson:
 		return true
 	default:
 		return false

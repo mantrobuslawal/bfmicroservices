@@ -11,6 +11,7 @@ import (
 func mapServiceError(err error) error {
 	switch {
 	case errors.Is(err, catalog.ErrInvalidProductID),
+		errors.Is(err, catalog.ErrInvalidCategoryID),
 		errors.Is(err, catalog.ErrInvalidPageSize),
 		errors.Is(err, catalog.ErrInvalidPageToken),
 		errors.Is(err, catalog.ErrInvalidDisplayOrder):

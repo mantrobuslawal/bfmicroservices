@@ -20,59 +20,21 @@ import (
 // generated code from leaking throughout the service internals.
 //
 
-type attributeData struct {
-	attributes  []*catalog.ProductAttributeValue
-	definitions []catalog.ProductAttributeDefinition
-}
-
-type hydratedProductAttributeValue struct {
-	AttributeID  catalog.AttributeID
-	Code         string
-	DisplayName  string
-	DataType     catalog.ProductAttributeDataType
-	ValueString  string
-	ValueNumber  string
-	ValueBoolean *bool
-	ValueJSON    []byte
-	Unit         string
-	ValueOptions []*catalog.ProductAttributeOption
-}
-
-type variantData struct {
-	variants    []*catalog.ProductVariant
-	definitions []catalog.ProductAttributeDefinition
-}
-
-type hydratedProductVariant struct {
-	VariantID   catalog.VariantID
-	ProductID   catalog.ProductID
-	Sku         catalog.Sku
-	VariantName string
-	Status      catalog.ProductVariantStatus
-	Price       catalog.Money
-	Attributes  []*hydratedProductAttributeValue
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
 // statusToProto maps anything type implementing the Catalog.Status interface
 // to catalogv1.ProductStatus
-func catalogStatusToProto[T catalog.LifecycleStatus, E catalogv1.ProductStatus, err error](t T) (E, error) {
-	status, ok := any(t).(string)
-	if ok {
-		switch status {
-		case "draft":
-			return E(catalogv1.ProductStatus_PRODUCT_STATUS_DRAFT), nil
-		case "active":
-			return E(catalogv1.ProductStatus_PRODUCT_STATUS_ACTIVE), nil
-		case "inactive":
-			return E(catalogv1.ProductStatus_PRODUCT_STATUS_INACTIVE), nil
-		case "archived":
-			return E(catalogv1.ProductStatus_PRODUCT_STATUS_ARCHIVED), nil
-		}
+func catalogStatusToProto[T catalog.LifecycleStatus](status T) (catalogv1.ProductStatus, error) {
+	switch string(status) {
+	case "draft":
+		return catalogv1.ProductStatus_PRODUCT_STATUS_DRAFT, nil
+	case "active":
+		return catalogv1.ProductStatus_PRODUCT_STATUS_ACTIVE, nil
+	case "inactive":
+		return catalogv1.ProductStatus_PRODUCT_STATUS_INACTIVE, nil
+	case "archived":
+		return catalogv1.ProductStatus_PRODUCT_STATUS_ARCHIVED, nil
+	default:
+		return catalogv1.ProductStatus_PRODUCT_STATUS_UNSPECIFIED, fmt.Errorf("unknown catalog lifecycle status: %q", string(status))
 	}
-	return E(catalogv1.ProductStatus_PRODUCT_STATUS_UNSPECIFIED), fmt.Errorf("unknown catalog lifecycle status: %q", status)
-
 }
 
 func productAttributeDataTypeToProto(datatype catalog.ProductAttributeDataType) (catalogv1.ProductAttributeDataType, error) {
@@ -94,9 +56,9 @@ func productAttributeDataTypeToProto(datatype catalog.ProductAttributeDataType) 
 	}
 }
 
-func productImageToProto(img *catalog.ProductImage) (*catalogv1.ProductImage, error) {
+func productImageToProto(img *catalog.ProductImage) *catalogv1.ProductImage {
 	if img == nil {
-		return nil, fmt.Errorf("unable to convert nil pointer to ProductImage proto")
+		return nil
 	}
 
 	return &catalogv1.ProductImage{
@@ -105,7 +67,7 @@ func productImageToProto(img *catalog.ProductImage) (*catalogv1.ProductImage, er
 		Url:          img.Url,
 		AltText:      img.AltText,
 		DisplayOrder: int32(img.DisplayOrder),
-	}, nil
+	}
 }
 
 // Maps a catalog.Category to a *catalogv1.Category
@@ -114,7 +76,7 @@ func categoryToProto(category *catalog.Category) (*catalogv1.Category, error) {
 		return nil, fmt.Errorf("unable to convert nil pointer to Category proto")
 	}
 
-	status, err := catalogStatusToProto[catalog.CategoryStatus, catalogv1.ProductStatus, error](category.Status)
+	status, err := catalogStatusToProto(category.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +92,7 @@ func categoryToProto(category *catalog.Category) (*catalogv1.Category, error) {
 	}
 
 	if category.ParentCategoryID != nil {
-		response.ParentCategoryId = string(category.CategoryID)
+		response.ParentCategoryId = string(*category.ParentCategoryID)
 	}
 
 	return response, nil
@@ -144,7 +106,7 @@ func listProductToProto(product *catalog.Product) (*catalogv1.Product, error) {
 		return nil, fmt.Errorf("unable to convert nil pointer to Product proto")
 	}
 
-	status, err := catalogStatusToProto[catalog.ProductStatus, catalogv1.ProductStatus, error](product.Status)
+	status, err := catalogStatusToProto(product.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -166,130 +128,148 @@ func listProductToProto(product *catalog.Product) (*catalogv1.Product, error) {
 	}, nil
 }
 
-func createProductAttributes(ad *attributeData) ([]*hydratedProductAttributeValue, error) {
-	if ad == nil {
-		return nil, fmt.Errorf("unable to convert nil pointer to []*hydratedProductAttributeValue")
-	}
-
-	out := make([]*hydratedProductAttributeValue, 0, len(ad.attributes))
-
-	for _, attribute := range ad.attributes {
-		id := attribute.AttributeID
-		var hpav hydratedProductAttributeValue
-		hpav.AttributeID = id
-		hpav.Unit = attribute.Unit
-		hpav.ValueString = attribute.ValueString
-		hpav.ValueNumber = attribute.ValueNumber
-		hpav.ValueBoolean = attribute.ValueBoolean
-		hpav.ValueJSON = attribute.ValueJSON
-
-		for _, definition := range ad.definitions {
-			if id == definition.AttributeID {
-				hpav.Code = definition.Code
-				hpav.DisplayName = definition.DisplayName
-				hpav.DataType = definition.DataType
-				hpav.ValueOptions = definition.Options
-			}
-			break
-		}
-		out = append(out, &hpav)
-	}
-
-	return out, nil
-}
-
-func createProductVariant(data *variantData) ([]*hydratedProductVariant, error) {
-
-	if data == nil {
-		return nil, fmt.Errorf("unable to map nil pointer to []*hydratedProductVariant")
-	}
-
-	out := make([]*hydratedProductVariant, 0, len(data.variants))
-
-	for _, variant := range data.variants {
-		var hpv hydratedProductVariant
-
-		hydratedAttributes, err := createProductAttributes(&attributeData{variant.Attributes, data.definitions})
-		if err != nil {
-			return nil, fmt.Errorf("create *[]hydratedProductAttribute: %w", err)
-		}
-
-		hpv.VariantID = variant.VariantID
-		hpv.ProductID = variant.ProductID
-		hpv.Sku = variant.Sku
-		hpv.VariantName = variant.VariantName
-		hpv.Status = variant.Status
-		hpv.Price = variant.Price
-		hpv.CreatedAt = variant.CreatedAt
-		hpv.UpdatedAt = variant.UpdatedAt
-		hpv.Attributes = hydratedAttributes
-
-		out = append(out, &hpv)
-	}
-
-	return out, nil
-}
-
-// Maps a catalog.Product to a *catalogv1.Product
-func productToProto(product *catalog.Product, definitions []catalog.ProductAttributeDefinition) (*catalogv1.Product, error) {
-	if product == nil {
-		return nil, fmt.Errorf("unable to convert nil pointer to Product proto")
-	}
-
-	status, err := catalogStatusToProto[catalog.ProductStatus, catalogv1.ProductStatus, error](product.Status)
+// productDetailsToProto provides a fully hyrdated catalog product.
+// Returned when calls are made to GetProduct endpoint.
+func productDetailsToProto(product catalog.ProductDetails) (*catalogv1.Product, error) {
+	status, err := catalogStatusToProto(product.Status)
 	if err != nil {
 		return nil, err
 	}
 
-	data := attributeData{
+	attributes, err := sliceutil.Map[*catalog.ProductAttributeValueDetails, *catalogv1.ProductAttributeValue, error](
 		product.Attributes,
-		definitions,
-	}
-	attributeSlice, err := createProductAttributes(&data)
+		productAttributeValueDetailsToProto,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("adding attribute definition data to product attribute values :%w", err)
-	}
-	attributes, err := sliceutil.Map[*hydratedProductAttributeValue, *catalogv1.ProductAttributeValue, error](attributeSlice, productAttributeValueToProto)
-	if err != nil {
-		return nil, fmt.Errorf("product to protobuf mapping, attributes: %w", err)
+		return nil, err
 	}
 
-	varData := variantData{
+	variants, err := sliceutil.Map[*catalog.ProductVariantDetails, *catalogv1.ProductVariant, error](
 		product.Variants,
-		definitions,
-	}
-	variantSlice, err := createProductVariant(&varData)
+		productVariantDetailsToProto,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("adding attribute definition data to product attribute values :%w", err)
-	}
-	variants, err := sliceutil.Map[*hydratedProductVariant, *catalogv1.ProductVariant, error](variantSlice, productVariantToProto)
-	if err != nil {
-		return nil, fmt.Errorf("product to protobuf mapping, variants: %w", err)
+		return nil, err
 	}
 
-	images, err := sliceutil.Map[*catalog.ProductImage, *catalogv1.ProductImage, error](product.Images, productImageToProto)
-	if err != nil {
-		return nil, fmt.Errorf("product to protobuf mapping, images: %w", err)
-	}
+	images := sliceutil.MapNoError[*catalog.ProductImage, *catalogv1.ProductImage](
+		product.Images,
+		productImageToProto,
+	)
 
 	return &catalogv1.Product{
 		ProductId:   string(product.ProductID),
 		CategoryId:  string(product.CategoryID),
 		Name:        product.Name,
+		Slug:        product.Slug,
 		Description: product.Description,
 		Brand:       product.Brand,
 		Status:      status,
-		BasePrice: &commonv1.Money{
-			AmountMinor:  product.BasePrice.AmountMinor,
-			CurrencyCode: product.BasePrice.CurrencyCode,
-		},
-		Slug:       product.Slug, // TODO: regen product.pb.go - updated version includes slug
-		Variants:   variants,
-		Attributes: attributes,
-		Images:     images,
-		CreatedAt:  timestamppb.New(product.CreatedAt),
-		UpdatedAt:  timestamppb.New(product.UpdatedAt),
+		BasePrice:   moneyToProto(product.BasePrice),
+		Attributes:  attributes,
+		Variants:    variants,
+		Images:      images,
+		CreatedAt:   timetoProto(product.CreatedAt),
+		UpdatedAt:   timetoProto(product.UpdatedAt),
 	}, nil
+
+}
+
+func productAttributeValueDetailsToProto(p *catalog.ProductAttributeValueDetails) (*catalogv1.ProductAttributeValue, error) {
+	if p == nil {
+		return nil, fmt.Errorf("unable to convert nil pointer to proto")
+	}
+
+	var proto catalogv1.ProductAttributeValue
+
+	proto.AttributeId = string(p.AttributeID)
+	proto.Code = p.Code
+	proto.DisplayName = p.DisplayName
+	proto.Unit = p.Unit
+
+	datatype, err := productAttributeDataTypeToProto(p.DataType)
+	if err != nil {
+		return nil, fmt.Errorf("product attribute datatype map to proto: %w", err)
+	}
+
+	proto.DataType = datatype
+
+	Options := p.Options
+	var options []string
+	for _, Option := range Options {
+		options = append(options, Option.Value)
+	}
+
+	proto.ValueOptions = options
+
+	switch {
+	case p.ValueString != "":
+		proto.Value = &catalogv1.ProductAttributeValue_ValueString{
+			ValueString: p.ValueString,
+		}
+
+	case p.ValueNumber != "":
+		number, err := strconv.ParseFloat(p.ValueNumber, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse product attribute number value %q: %w", p.ValueNumber, err)
+		}
+		proto.Value = &catalogv1.ProductAttributeValue_ValueNumber{
+			ValueNumber: number,
+		}
+
+	case p.ValueBoolean != nil:
+		proto.Value = &catalogv1.ProductAttributeValue_ValueBoolean{
+			ValueBoolean: *p.ValueBoolean,
+		}
+
+	case len(p.ValueJSON) > 0:
+		proto.Value = &catalogv1.ProductAttributeValue_ValueJson{
+			ValueJson: string(p.ValueJSON),
+		}
+
+	default:
+		return nil, fmt.Errorf("product attribute value %q has no value set", p.AttributeID)
+
+	}
+
+	return &proto, nil
+}
+
+func productVariantDetailsToProto(p *catalog.ProductVariantDetails) (*catalogv1.ProductVariant, error) {
+	if p == nil {
+		return nil, fmt.Errorf("unable to convert nil pointer to proto")
+	}
+
+	status, err := catalogStatusToProto(p.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	attributes, err := sliceutil.Map[*catalog.ProductAttributeValueDetails, *catalogv1.ProductAttributeValue, error](p.Attributes, productAttributeValueDetailsToProto)
+	if err != nil {
+		return nil, fmt.Errorf("product variant to proto mapping, product attribute values: %w", err)
+	}
+
+	return &catalogv1.ProductVariant{
+		VariantId:  string(p.VariantID),
+		ProductId:  string(p.ProductID),
+		Sku:        string(p.Sku),
+		Status:     status,
+		Price:      moneyToProto(p.Price),
+		Attributes: attributes,
+		CreatedAt:  timetoProto(p.CreatedAt),
+		UpdatedAt:  timetoProto(p.UpdatedAt),
+	}, nil
+}
+
+func moneyToProto(money catalog.Money) *commonv1.Money {
+	return &commonv1.Money{
+		AmountMinor:  money.AmountMinor,
+		CurrencyCode: money.CurrencyCode,
+	}
+}
+func timetoProto(time time.Time) *timestamppb.Timestamp {
+	return timestamppb.New(time)
 }
 
 func productAttributeOptionToProto(p *catalog.ProductAttributeOption) (*catalogv1.ProductAttributeOption, error) {
@@ -297,7 +277,7 @@ func productAttributeOptionToProto(p *catalog.ProductAttributeOption) (*catalogv
 		return nil, fmt.Errorf("unable to convert nil pointer to ProductAttributeOption proto")
 	}
 
-	status, err := catalogStatusToProto[catalog.ProductAttributeOptionStatus, catalogv1.ProductStatus, error](p.Status)
+	status, err := catalogStatusToProto(p.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -311,17 +291,102 @@ func productAttributeOptionToProto(p *catalog.ProductAttributeOption) (*catalogv
 	}, nil
 }
 
+func productAttributeDefinitionToProto(pad *catalog.ProductAttributeDefinition) (*catalogv1.ProductAttributeDefinition, error) {
+	if pad == nil {
+		return nil, fmt.Errorf("unable to convert nil pointer to ProductAttributeDefinition proto")
+	}
+
+	dt, err := productAttributeDataTypeToProto(pad.DataType)
+	if err != nil {
+		return nil, fmt.Errorf("map product attribute definition data type to proto: %w", err)
+	}
+
+	options, err := sliceutil.Map[*catalog.ProductAttributeOption, *catalogv1.ProductAttributeOption, error](pad.Options, productAttributeOptionToProto)
+	if err != nil {
+		return nil, fmt.Errorf("map product attribute option to to proto: %w", err)
+	}
+
+	status, err := catalogStatusToProto(pad.Status)
+	if err != nil {
+		return nil, fmt.Errorf("map product attribute definition status to product status proto: %w", err)
+	}
+
+	return &catalogv1.ProductAttributeDefinition{
+		AttributeId:       string(pad.AttributeID),
+		CategoryId:        string(pad.CategoryID),
+		Code:              pad.Code,
+		DisplayName:       pad.DisplayName,
+		Description:       pad.Description,
+		DataType:          dt,
+		Unit:              pad.Unit,
+		IsRequired:        pad.IsRequired,
+		IsFilterable:      pad.IsFilterable,
+		IsVariantDefining: pad.IsVariantDefining,
+		Options:           options,
+		Status:            status,
+	}, nil
+}
+
+/* TODO: NO LONGER REQUIRED - DELETE ONCE ALL TESTS PASS
+// Maps a catalog.Product to a *catalogv1.Product
+func productToProto(hydratedProduct *catalog.HydratedProduct) (*catalogv1.Product, error) {
+	if hydratedProduct == nil {
+		return nil, fmt.Errorf("unable to convert nil pointer to Product proto")
+	}
+
+	status, err := catalogStatusToProto(hydratedProduct.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	attributes, err := sliceutil.Map[*hydratedProductAttributeValue, *catalogv1.ProductAttributeValue, error](hydratedProduct.Attributes, productAttributeValueToProto)
+	if err != nil {
+		return nil, fmt.Errorf("product to protobuf mapping, attributes: %w", err)
+	}
+
+	variants, err := sliceutil.Map[*hydratedProductVariant, *catalogv1.ProductVariant, error](hydratedProduct.Variants, productVariantToProto)
+	if err != nil {
+		return nil, fmt.Errorf("product to protobuf mapping, variants: %w", err)
+	}
+
+	images, err := sliceutil.Map[*catalog.ProductImage, *catalogv1.ProductImage, error](hydratedProduct.Images, productImageToProto)
+	if err != nil {
+		return nil, fmt.Errorf("product to protobuf mapping, images: %w", err)
+	}
+
+	return &catalogv1.Product{
+		ProductId:   string(hydratedProduct.ProductID),
+		CategoryId:  string(hydratedProduct.CategoryID),
+		Name:        hydratedProduct.Name,
+		Description: hydratedProduct.Description,
+		Brand:       hydratedProduct.Brand,
+		Status:      status,
+		BasePrice: &commonv1.Money{
+			AmountMinor:  hydratedProduct.BasePrice.AmountMinor,
+			CurrencyCode: hydratedProduct.BasePrice.CurrencyCode,
+		},
+		Slug:       hydratedProduct.Slug, // TODO: regen product.pb.go - updated version includes slug
+		Variants:   variants,
+		Attributes: attributes,
+		Images:     images,
+		CreatedAt:  timestamppb.New(hydratedProduct.CreatedAt),
+		UpdatedAt:  timestamppb.New(hydratedProduct.UpdatedAt),
+	}, nil
+}
+
+
+
 func productVariantToProto(pv *hydratedProductVariant) (*catalogv1.ProductVariant, error) {
 	if pv == nil {
 		return nil, fmt.Errorf("unable to convert nil pointer to ProductVariant proto")
 	}
 
-	status, err := catalogStatusToProto[catalog.ProductVariantStatus, catalogv1.ProductStatus, error](pv.Status)
+	status, err := catalogStatusToProto(pv.Status)
 	if err != nil {
 		return nil, err
 	}
 
-	attributes, err := sliceutil.Map[*catalog.ProductAttributeValue, *catalogv1.ProductAttributeValue, error](pv.Attributes, productAttributeValueToProto)
+	attributes, err := sliceutil.Map[*hydratedProductAttributeValue, *catalogv1.ProductAttributeValue, error](pv.Attributes, productAttributeValueToProto)
 	if err != nil {
 		return nil, fmt.Errorf("product variant to proto mapping, product attribute values: %w", err)
 	}
@@ -376,7 +441,7 @@ func productAttributeValueToProto(hpav *hydratedProductAttributeValue) (*catalog
 	case hpav.ValueNumber != "":
 		number, err := strconv.ParseFloat(hpav.ValueNumber, 64)
 		if err != nil {
-			return nil, fmt.Errorf("parsing ValueNumber to float64: %w")
+			return nil, fmt.Errorf("parse product attribute number value %q: %w", hpav.ValueNumber, err)
 		}
 		protoValue.Value = &catalogv1.ProductAttributeValue_ValueNumber{
 			ValueNumber: number,
@@ -399,39 +464,4 @@ func productAttributeValueToProto(hpav *hydratedProductAttributeValue) (*catalog
 
 	return protoValue, nil
 }
-
-func productAttributeDefinitionToProto(pad *catalog.ProductAttributeDefinition) (*catalogv1.ProductAttributeDefinition, error) {
-	if pad == nil {
-		return nil, fmt.Errorf("unable to convert nil pointer to ProductAttributeDefinition proto")
-	}
-
-	dt, err := productAttributeDataTypeToProto(pad.DataType)
-	if err != nil {
-		return nil, fmt.Errorf("map product attribute definition data type to proto: %w", err)
-	}
-
-	options, err := sliceutil.Map[*catalog.ProductAttributeOption, *catalogv1.ProductAttributeOption, error](pad.Options, productAttributeOptionToProto)
-	if err != nil {
-		return nil, fmt.Errorf("map product attribute option to to proto: %w", err)
-	}
-
-	status, err := catalogStatusToProto[catalog.ProductAttributeDefinitionStatus, catalogv1.ProductStatus, error](pad.Status)
-	if err != nil {
-		return nil, fmt.Errorf("map product attribute definition status to product status proto: %w", err)
-	}
-
-	return &catalogv1.ProductAttributeDefinition{
-		AttributeId:       string(pad.AttributeID),
-		CategoryId:        string(pad.CategoryID),
-		Code:              pad.Code,
-		DisplayName:       pad.DisplayName,
-		Description:       pad.Description,
-		DataType:          dt,
-		Unit:              pad.Unit,
-		IsRequired:        pad.IsRequired,
-		IsFilterable:      pad.IsFilterable,
-		IsVariantDefining: pad.IsVariantDefining,
-		Options:           options,
-		Status:            status,
-	}, nil
-}
+*/

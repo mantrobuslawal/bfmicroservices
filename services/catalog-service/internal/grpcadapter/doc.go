@@ -9,7 +9,7 @@
 //
 // It's the intention of this package to stay thin. Business rules live in the catalog package,
 // generated Protobuf definitions belong to the API contract, and persistence concerns exist in
-// repository implementations. grpcadaper only coordinates these boundaries.
+// repository implementations. The grpcadapter package only coordinates these boundaries.
 //
 // Typical repsonsibilities include:
 //
@@ -22,7 +22,7 @@
 //   - translating catalog domain errors into appropriate gRPC status codes;
 //   - keeping transport-specific concerns out of the catalog domain model.
 //
-// The package does not conatin SQL, database transactions, Kafka publishing,
+// The package does not contain SQL, database transactions, Kafka publishing,
 // catalog business rules, or direct infrastructure orchestration. Those
 // responsibilities belong to lower-level repositories, domain/application
 // services, or platform packages.

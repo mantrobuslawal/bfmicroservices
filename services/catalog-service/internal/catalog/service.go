@@ -106,18 +106,129 @@ func (s *Service) ListProducts(ctx context.Context, input ListProductsFilter) (L
 }
 
 // GetProduct returns a single product, it's variants and attributes.
-func (s *Service) GetProduct(ctx context.Context, productID ProductID) (Product, error) {
+func (s *Service) GetProduct(ctx context.Context, productID ProductID) (ProductDetails, error) {
 	id, err := isValidCatalogID(productID)
 	if err != nil {
-		return Product{}, ErrInvalidProductID
+		return ProductDetails{}, ErrInvalidProductID
 	}
 
 	product, err := s.repository.GetProduct(ctx, ProductID(id))
 	if err != nil {
-		return Product{}, fmt.Errorf("get product %q: %w", id, err)
+		return ProductDetails{}, fmt.Errorf("get product %q: %w", id, err)
 	}
 
-	return product, nil
+	definitions, err := s.repository.ListProductAttributeDefinitions(ctx, ListQuery{
+		ID:            string(product.CategoryID),
+		FilterOptions: []bool{true, false},
+		Limit:         500, // Magic Number - create ListAllProductAttributeDefinitionForCategory(ctx, catgeoryID)([]ProductAttributeDefinition, error)
+	})
+	if err != nil {
+		return ProductDetails{}, fmt.Errorf("list attribute defintions for category %q: %w", product.CategoryID, err)
+	}
+
+	details, err := hydrateProduct(product, definitions)
+	if err != nil {
+		return ProductDetails{}, fmt.Errorf("hydrate product %q: %w", product.ProductID, err)
+	}
+
+	return details, nil
+
+}
+
+func hydrateProduct(product Product, definitions []ProductAttributeDefinition) (ProductDetails, error) {
+	definitionsByID := make(map[AttributeID]ProductAttributeDefinition, len(definitions))
+
+	for _, definition := range definitions {
+		definitionsByID[definition.AttributeID] = definition
+	}
+
+	details := ProductDetails{
+		ProductID:   product.ProductID,
+		CategoryID:  product.CategoryID,
+		Name:        product.Name,
+		Slug:        product.Slug,
+		Description: product.Description,
+		Brand:       product.Brand,
+		Status:      product.Status,
+		BasePrice:   product.BasePrice,
+		CreatedAt:   product.CreatedAt,
+		UpdatedAt:   product.UpdatedAt,
+		Images:      product.Images,
+	}
+
+	for _, value := range product.Attributes {
+		hydrated, err := hydrateProductAttributeValue(value, definitionsByID)
+		if err != nil {
+			return ProductDetails{}, err
+		}
+
+		details.Attributes = append(details.Attributes, hydrated)
+	}
+
+	for _, variant := range product.Variants {
+		variantDetails := &ProductVariantDetails{
+			VariantID:   variant.VariantID,
+			ProductID:   variant.ProductID,
+			Sku:         variant.Sku,
+			VariantName: variant.VariantName,
+			Status:      variant.Status,
+			Price:       variant.Price,
+			CreatedAt:   variant.CreatedAt,
+			UpdatedAt:   variant.UpdatedAt,
+		}
+
+		for _, value := range product.Attributes {
+			if value.VariantID == nil {
+				continue
+			}
+
+			if *&variant.VariantID != *value.VariantID {
+				continue
+			}
+
+			hydrated, err := hydrateProductAttributeValue(value, definitionsByID)
+			if err != nil {
+				return ProductDetails{}, err
+			}
+
+			variantDetails.Attributes = append(variantDetails.Attributes, hydrated)
+		}
+
+		details.Variants = append(details.Variants, variantDetails)
+	}
+
+	return details, nil
+}
+func hydrateProductAttributeValue(value *ProductAttributeValue, definitionsByID map[AttributeID]ProductAttributeDefinition) (*ProductAttributeValueDetails, error) {
+	if value == nil {
+		return nil, fmt.Errorf("nil product attribute value")
+	}
+
+	definition, ok := definitionsByID[value.AttributeID]
+	if !ok {
+		return nil, fmt.Errorf("missing attribute definition %q", value.AttributeID)
+	}
+
+	return &ProductAttributeValueDetails{
+		ProductAttributeValueID: value.ProductAttributeValueID,
+		ProductID:               value.ProductID,
+		VariantID:               value.VariantID,
+		AttributeID:             value.AttributeID,
+
+		Code:        definition.Code,
+		DisplayName: definition.DisplayName,
+		DataType:    definition.DataType,
+		Options:     definition.Options,
+
+		ValueString:  value.ValueString,
+		ValueNumber:  value.ValueNumber,
+		ValueBoolean: value.ValueBoolean,
+		ValueJSON:    value.ValueJSON,
+		Unit:         value.Unit,
+
+		CreatedAt: value.CreatedAt,
+		UpdatedAt: value.UpdatedAt,
+	}, nil
 }
 
 // ListCategories returns customer-visible catalogue categories.

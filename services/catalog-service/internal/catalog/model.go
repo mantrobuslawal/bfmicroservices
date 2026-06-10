@@ -144,6 +144,63 @@ type ProductImage struct {
 	DisplayOrder int
 }
 
+// ProductDetails represents a fully hydrated version of a catalog product.
+// This product view is provided when a call to GetProduct is made.
+type ProductDetails struct {
+	ProductID   ProductID
+	CategoryID  CategoryID
+	Name        string
+	Slug        string
+	Description string
+	Brand       string
+	Status      ProductStatus
+	BasePrice   Money
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+
+	Variants   []*ProductVariantDetails
+	Attributes []*ProductAttributeValueDetails
+	Images     []*ProductImage
+}
+
+// ProductVariantDetails represents a fully hydrated version of a catalog product variant.
+// This view is provided when a call to GetProduct is made.
+type ProductVariantDetails struct {
+	VariantID   VariantID
+	ProductID   ProductID
+	Sku         Sku
+	VariantName string
+	Status      ProductVariantStatus
+	Price       Money
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+
+	Attributes []*ProductAttributeValueDetails
+}
+
+// ProductAttributesValueDetails represents a fully hydrated version of a catalog product.
+// This product view is provided when a call to GetProduct is made.
+type ProductAttributeValueDetails struct {
+	ProductAttributeValueID ProductAttributeValueID
+	ProductID               ProductID
+	VariantID               *VariantID
+	AttributeID             AttributeID
+
+	Code        string
+	DisplayName string
+	DataType    ProductAttributeDataType
+	Options     []*ProductAttributeOption
+
+	ValueString  string
+	ValueNumber  string
+	ValueBoolean *bool
+	ValueJSON    []byte
+	Unit         string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // ListProductsFilter defines filter for product listing.
 type ListProductsFilter struct {
 	CategoryID      CategoryID

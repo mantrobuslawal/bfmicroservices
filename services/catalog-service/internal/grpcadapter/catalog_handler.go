@@ -23,6 +23,14 @@ type CatalogHandler struct {
 
 // NewCatalogHandler creates a Catalog Service gRPC handler.
 func NewCatalogHandler(catalogService *catalog.Service, logger *slog.Logger) *CatalogHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	if catalogService == nil {
+		panic("grpcadapter: nil catalog service")
+	}
+
 	return &CatalogHandler{
 		catalogService: catalogService,
 		logger:         logger,
@@ -34,7 +42,7 @@ func NewCatalogHandler(catalogService *catalog.Service, logger *slog.Logger) *Ca
 // - are not provided by this endpoint.
 func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListProductsRequest) (*catalogv1.ListProductsResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "nil ListProductsRequest")
+		return nil, status.Error(codes.InvalidArgument, "request is required")
 
 	}
 
@@ -74,7 +82,7 @@ func (h *CatalogHandler) ListProducts(ctx context.Context, req *catalogv1.ListPr
 // This Product instance is fully hydrated - including image, variant, attributes etc.
 func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "nil GetProductRequest")
+		return nil, status.Error(codes.InvalidArgument, "request is required")
 
 	}
 
@@ -92,43 +100,20 @@ func (h *CatalogHandler) GetProduct(ctx context.Context, req *catalogv1.GetProdu
 		return nil, mapServiceError(err)
 	}
 
-	// TODO: Need to update GetProduct request proto to include attribute definition filter options !!
-	response, err := h.catalogService.ListProductAttributeDefinitions(ctx, catalog.ListProductAttributeDefinitionsFilter{CategoryID: product.CategoryID})
-	if err != nil {
-		h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
-		return nil, mapServiceError(err)
-	}
-	definitions := make([]catalog.ProductAttributeDefinition, 0, len(response.Result))
-	definitions = append(definitions, response.Result...)
-
-	// This endpoint uses pagination, therefore we need to ensure we have all the definitions required
-	// to hydrate the product structure.
-	for response.NextPageToken != "" {
-		next := response.NextPageToken
-		response, err := h.catalogService.ListProductAttributeDefinitions(ctx, catalog.ListProductAttributeDefinitionsFilter{
-			CategoryID: product.CategoryID,
-			PageToken:  next})
-		if err != nil {
-			h.logger.Error("failed to get product attribute definitions", "product_id", productID, "error", err)
-			return nil, mapServiceError(err)
-		}
-		definitions = append(definitions, response.Result...)
-	}
-
-	hydratedProduct, err := productToProto(&product, definitions)
+	protoProduct, err := productDetailsToProto(product)
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
 
 	return &catalogv1.GetProductResponse{
-		Product: hydratedProduct,
+		Product: protoProduct,
 	}, nil
 }
 
 // ListCategories returns list of product categories matching filter criteria.
 func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.ListCategoriesRequest) (*catalogv1.ListCategoriesResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "nil ListCategoriesRequest")
+		return nil, status.Error(codes.InvalidArgument, "request is required")
 
 	}
 
@@ -171,7 +156,7 @@ func (h *CatalogHandler) ListCategories(ctx context.Context, req *catalogv1.List
 func (h *CatalogHandler) ListProductAttributeDefinitions(ctx context.Context,
 	req *catalogv1.ListProductAttributeDefinitionsRequest) (*catalogv1.ListProductAttributeDefinitionsResponse, error) {
 	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "nil ListProductAttributeDefinitions")
+		return nil, status.Error(codes.InvalidArgument, "request is required")
 
 	}
 
