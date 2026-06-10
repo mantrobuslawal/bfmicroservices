@@ -251,14 +251,15 @@ func productVariantDetailsToProto(p *catalog.ProductVariantDetails) (*catalogv1.
 	}
 
 	return &catalogv1.ProductVariant{
-		VariantId:  string(p.VariantID),
-		ProductId:  string(p.ProductID),
-		Sku:        string(p.Sku),
-		Status:     status,
-		Price:      moneyToProto(p.Price),
-		Attributes: attributes,
-		CreatedAt:  timetoProto(p.CreatedAt),
-		UpdatedAt:  timetoProto(p.UpdatedAt),
+		VariantId:   string(p.VariantID),
+		VariantName: p.VariantName,
+		ProductId:   string(p.ProductID),
+		Sku:         string(p.Sku),
+		Status:      status,
+		Price:       moneyToProto(p.Price),
+		Attributes:  attributes,
+		CreatedAt:   timetoProto(p.CreatedAt),
+		UpdatedAt:   timetoProto(p.UpdatedAt),
 	}, nil
 }
 
