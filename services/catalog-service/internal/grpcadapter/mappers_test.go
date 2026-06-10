@@ -323,8 +323,8 @@ func TestProductAttributeValueDetailsToProtoMapsValueOptions(t *testing.T) {
 		DataType:    catalog.ProductAttributeDataTypeOption,
 		ValueString: "blue",
 		Options: []*catalog.ProductAttributeOption{
-			{OptionID: catalog.OptionID("opt_blue"), Value: "blue", DisplayName: "Blue", Status: catalog.ProductAttributeOptionsActive},
-			{OptionID: catalog.OptionID("opt_green"), Value: "green", DisplayName: "Green", Status: catalog.ProductAttributeOptionsActive},
+			{OptionID: catalog.OptionID("opt_blue"), Value: "blue", DisplayName: "Blue", Status: catalog.ProductAttributeOptionsStatusActive},
+			{OptionID: catalog.OptionID("opt_green"), Value: "green", DisplayName: "Green", Status: catalog.ProductAttributeOptionsStatusActive},
 		},
 	})
 	if err != nil {
@@ -479,7 +479,7 @@ func TestProductAttributeOptionToProtoMapsOption(t *testing.T) {
 		Value:        "blue",
 		DisplayName:  "Blue",
 		DisplayOrder: 10,
-		Status:       catalog.ProductAttributeOptionsActive,
+		Status:       catalog.ProductAttributeOptionsStatusActive,
 	})
 	if err != nil {
 		t.Fatalf("productAttributeOptionToProto() error = %v, want nil", err)
@@ -514,7 +514,7 @@ func TestProductAttributeDefinitionToProtoMapsDefinitionWithOptions(t *testing.T
 				Value:        "blue",
 				DisplayName:  "Blue",
 				DisplayOrder: 10,
-				Status:       catalog.ProductAttributeOptionsActive,
+				Status:       catalog.ProductAttributeOptionsStatusActive,
 			},
 		},
 	})
