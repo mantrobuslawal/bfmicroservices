@@ -1,10 +1,12 @@
 package interceptors
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -40,7 +42,7 @@ func TestUnaryLoggingInterceptorReturnsHandlerResponse(t *testing.T) {
 	}
 }
 
-func TestUnaryLoggingInterceptorReturnHandlerError(t *testing.T) {
+func TestUnaryLoggingInterceptorReturnsHandlerError(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -147,5 +149,128 @@ func TestUnaryLoggingInterceptorReturnsNonGRPCError(t *testing.T) {
 
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestUnaryLoggingInterceptorLogsCorrelationIDWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	interceptor := UnaryLoggingInterceptor(logger)
+
+	ctx := ContextWithCorrelationID(context.Background(), "local-dev-123")
+
+	_, err := interceptor(
+		ctx,
+		"request",
+		&grpc.UnaryServerInfo{
+			FullMethod: "/bfstore.catalog.v1.CatalogService/ListProducts",
+		},
+		func(ctx context.Context, req any) (any, error) {
+			return "response", nil
+		},
+	)
+
+	if err != nil {
+		t.Fatalf("interceptor returned error = %v, want nil", err)
+	}
+
+	got := buf.String()
+
+	if !strings.Contains(got, "correlation_id=local-dev-123") {
+		t.Fatalf("log output = %q, want correlation_id", got)
+	}
+
+	if !strings.Contains(got, "grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts") {
+		t.Fatalf("log output = %q, want grpc.method", got)
+	}
+
+	if !strings.Contains(got, "grpc.code=OK") {
+		t.Fatalf("log output = %q, want grpc.code=OK", got)
+	}
+}
+
+func TestUnaryLoggingInterceptorDoesNotLogCorrelationIDWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	interceptor := UnaryLoggingInterceptor(logger)
+
+	_, err := interceptor(
+		context.Background(),
+		"request",
+		&grpc.UnaryServerInfo{
+			FullMethod: "/bfstore.catalog.v1.CatalogService/ListCategories",
+		},
+		func(ctx context.Context, req any) (any, error) {
+			return "response", nil
+		},
+	)
+
+	if err != nil {
+		t.Fatalf("interceptor returned error = %v, want nil", err)
+	}
+
+	got := buf.String()
+
+	if strings.Contains(got, "correlation_id=") {
+		t.Fatalf("log output = %q, did not expect correlation_id", got)
+	}
+
+	if !strings.Contains(got, "grpc.method=/bfstore.catalog.v1.CatalogService/ListCategories") {
+		t.Fatalf("log output = %q, want grpc.method", got)
+	}
+
+	if !strings.Contains(got, "grpc.code=OK") {
+		t.Fatalf("log output = %q, want grpc.code=OK", got)
+	}
+}
+
+func TestUnaryLoggingInterceptorLogsCorrelationIDOnError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	interceptor := UnaryLoggingInterceptor(logger)
+
+	ctx := ContextWithCorrelationID(context.Background(), "local-dev-error-123")
+	wantErr := status.Error(codes.InvalidArgument, "invalid page size")
+
+	response, err := interceptor(
+		ctx,
+		"request",
+		&grpc.UnaryServerInfo{
+			FullMethod: "/bfstore.catalog.v1.CatalogService/ListProducts",
+		},
+		func(ctx context.Context, req any) (any, error) {
+			return nil, wantErr
+		},
+	)
+
+	if response != nil {
+		t.Fatalf("response = %v, want nil", response)
+	}
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+
+	got := buf.String()
+
+	if !strings.Contains(got, "correlation_id=local-dev-error-123") {
+		t.Fatalf("log output = %q, want correlation_id", got)
+	}
+
+	if !strings.Contains(got, "grpc.code=InvalidArgument") {
+		t.Fatalf("log output = %q, want grpc.code=InvalidArgument", got)
+	}
+
+	if !strings.Contains(got, "grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts") {
+		t.Fatalf("log output = %q, want grpc.method", got)
 	}
 }
