@@ -10,7 +10,7 @@ It wraps the standard gRPC health service and gives services a small, consistent
 * exposing the standard `grpc.health.v1.Health` API;
 * coordinating health status during startup, readiness checks, and graceful shutdown.
 
-This package is intended for reusable platform-level health behaviour. It should not contain service-specific dependency checks such as MySQL queries, Kafka connectivity checks, cache checks, or domain-specific readiness rules. Those checks belong inside each service.
+This package is intended for reusable platform-level health behaviour. It does not contain service-specific dependency checks such as MySQL queries, Kafka connectivity checks, cache checks, or domain-specific readiness rules. These checks belong inside each service.
 
 For example, the catalog service can own the logic for checking whether its MySQL database is reachable, while this package owns the standard gRPC health service registration and status management.
 
@@ -27,7 +27,7 @@ This package is responsible for:
 
 ## Non-responsibilities
 
-This package should not:
+This package does not:
 
 * connect to service databases;
 * know about service repositories;
@@ -209,4 +209,3 @@ Possible future additions include:
 * Kubernetes probe documentation;
 * integration with OpenTelemetry metrics.
 
-Keep it boring where production matters.
