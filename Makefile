@@ -99,16 +99,26 @@ proto-generate-catalog: ## Generate Go code for Catalogue Protobuf contracts onl
 	buf generate --path proto/bfstore/catalog/v1
 
 .PHONY: catalog-run
+
+catalog-run:
 	cd services/catalog-service && GRPC_REFLECTION_ENABLED=true go run ./cmd/catalog-service
 
 .PHONY: catalog-grpc-list
+
+catalog-grpc-list:
 	grpcurl -plaintext localhost:50051 list
 
 .PHONY: catalog-health
+
+catalog-health:
 	grpcurl -plaintext -d '{}' localhost:50051 grpc.health.v1.Health/Check 
 
 .PHONY: catalog-list-products
+
+catalog-list-products:
 	grpcurl -plaintext -d '{"page": {"page_size": 5}}' localhost:50051 bfstore.catalog.v1.CatalogueService/ListProducts
 
 .PHONY: catalog-list-categories:
+
+catalog-list-categories:
 	grpcurl -plaintext -d '{"page":{"page_size":5}}' localhost:50051 bfstore.catalog.v1.CatalogueService/ListCategories
