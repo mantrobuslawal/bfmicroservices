@@ -117,3 +117,11 @@ catalog-list-products: ## List catalog service products
 .PHONY: catalog-list-categories
 catalog-list-categories: ## List catalog service product categories
 	grpcurl -plaintext -d '{"page":{"page_size":5}}' localhost:50051 bfstore.catalog.v1.CatalogService/ListCategories
+
+.PHONY: catalog-list-products-with-correlation
+catalog-list-products-with-correlation: ## Test correlation id propagation
+	grpcurl -plaintext \
+	   -H 'x-correlation-id: local-dev-123' \
+	   -d '{"page": {"page_size":5}}' \
+	   localhost:50051 \
+	   bfstore.catalog.v1.CatalogService/ListProducts
