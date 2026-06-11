@@ -7,11 +7,16 @@ import (
 	"google.golang.org/grpc"
 
 	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1"
+	platforminterceptors "github.com/mantrobuslawal/bfstore/pkg/platform/grpc/interceptors"
 )
 
 // NewServer creates the Catalogue Service gRPC server.
 func NewServer(catalogService *catalog.Service, logger *slog.Logger) *grpc.Server {
-	server := grpc.NewServer()
+	server := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			platforminterceptors.UnaryLoggingInterceptor(logger),
+		),
+	)
 
 	handler := NewCatalogHandler(catalogService, logger)
 
