@@ -28,6 +28,10 @@ func UnaryLoggingInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 			"duration_ms", duration.Milliseconds(),
 		}
 
+		if correlationID, ok := CorrelationIDFromContext(ctx); ok {
+			attrs = append(attrs, "correlation_id", correlationID)
+		}
+
 		if err != nil {
 			logger.ErrorContext(ctx, "grpc request failed", append(attrs, "error", err)...)
 			return resp, err

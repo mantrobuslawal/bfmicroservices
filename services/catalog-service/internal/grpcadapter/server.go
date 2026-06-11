@@ -15,6 +15,7 @@ func NewServer(catalogService *catalog.Service, logger *slog.Logger) *grpc.Serve
 	server := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			platforminterceptors.UnaryRecoveryInterceptor(logger),
+			platforminterceptors.UnaryCorrelationIDInterceptor(),
 			platforminterceptors.UnaryLoggingInterceptor(logger),
 		),
 	)
