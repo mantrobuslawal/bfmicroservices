@@ -1,4 +1,3 @@
-package healthcheck
 // Package healthcheck provides shared gRPC health-check wiring for bfstore
 // services.
 //
@@ -26,7 +25,7 @@ package healthcheck
 // this package to expose the resulting status through the standard gRPC health
 // API.
 //
-// Keep this package boring where production matters: simple status management,
+// In summary this package offers: simple status management,
 // clear service names, predictable shutdown behaviour, and no hidden service
 // orchestration.
 package healthcheck
