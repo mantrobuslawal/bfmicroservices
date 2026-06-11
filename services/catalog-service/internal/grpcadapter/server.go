@@ -14,6 +14,7 @@ import (
 func NewServer(catalogService *catalog.Service, logger *slog.Logger) *grpc.Server {
 	server := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			platforminterceptors.UnaryRecoveryInterceptor(logger),
 			platforminterceptors.UnaryLoggingInterceptor(logger),
 		),
 	)
