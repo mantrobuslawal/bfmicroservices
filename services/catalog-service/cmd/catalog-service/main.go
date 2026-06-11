@@ -10,14 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mantrobuslawal/bfstore/pkg/platform/healthcheck"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/database"
 	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpcadapter"
 	cataloghealth "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/health"
 
-	grpchealth "google.golang.org/grpc/health"
-	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -42,36 +41,34 @@ func main() {
 	}
 	defer closeDatabase(logger, db)
 
-	/*
-		if err := database.Ping(ctx, db); err != nil {
-			logger.Error("database ping failed", "error", err)
-			os.Exit(1)
-		}
-	*/
-
-	healthchecker := cataloghealth.NewChecker(db)
-
-	if err := healthchecker.Ready(ctx); err != nil {
-		logger.Error("service is not ready", "error", err)
-		os.Exit(1)
-	}
+	logger.Info("database connection opened")
 
 	repository := catalog.NewMySQLRepository(db)
 	service := catalog.NewService(repository)
 	grpcServer := cataloggrpc.NewServer(service, logger)
 
-	healthServer := grpchealth.NewServer()
-	healthv1.RegisterHealthServer(grpcServer, healthServer)
-
-	const catalogServiceName = "bfstore.catalog.v1.CatalogService"
-
-	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_SERVING)
-
 	if cfg.EnableGRPCReflection {
 		reflection.Register(grpcServer)
 		logger.Info("grpc reflection enabled")
 	}
+
+	const catalogServiceName = "bfstore.catalog.v1.CatalogService"
+
+	healthManager := healthcheck.NewManager(grpcServer)
+	healthManager.RegisterService(catalogServiceName)
+
+	catalogHealthchecker := cataloghealth.NewChecker(db)
+
+	if err := catalogHealthchecker.Ready(ctx); err != nil {
+		logger.Error("service is not ready", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("database readiness check passed")
+
+	healthManager.MarkServing()
+
+	logger.Info("grpc health service is registered")
 
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -79,45 +76,29 @@ func main() {
 		os.Exit(1)
 	}
 
+	serverErr := make(chan error, 1)
+
 	go func() {
 		logger.Info("catalog-service started", "grpc_port", cfg.GRPCPort)
-		if err := grpcServer.Serve(listener); err != nil {
-			logger.Error("gRPC server stopped unexpectedly", "error", err)
-			stop()
-		}
+		serverErr <- grpcServer.Serve(listener)
 	}()
 
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
+	go func() { monitorReadiness(ctx, logger, catalogHealthchecker, healthManager) }()
 
-		for {
-			select {
-			case <-ctx.Done():
-				healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
-				healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
-				return
+	select {
+	case <-ctx.Done():
+		logger.Info("shutdown signal received")
 
-			case <-ticker.C:
-				if err := healthchecker.Ready(ctx); err != nil {
-					logger.Warn("readiness check failed", "error", err)
-					healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
-					healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
-					continue
-				}
-
-				healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
-				healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_SERVING)
-			}
+	case err := <-serverErr:
+		if err != nil {
+			logger.Error("gRPC server failed", "error", err)
 		}
-	}()
+		stop()
+	}
 
-	<-ctx.Done()
-
-	logger.Info("shutdown signal received")
-
-	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
-	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
+	logger.Info("marking service not serving")
+	healthManager.MarkNotServing()
+	healthManager.Shutdown()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -141,4 +122,33 @@ func closeDatabase(logger *slog.Logger, db *sql.DB) {
 	if err := db.Close(); err != nil {
 		logger.Error("failed to close database", "error", err)
 	}
+}
+
+func monitorReadiness(
+	ctx context.Context,
+	logger *slog.Logger,
+	checker *cataloghealth.Checker,
+	healthServer *healthcheck.Manager,
+) {
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			healthServer.MarkNotServing()
+			return
+
+		case <-ticker.C:
+			if err := checker.Ready(ctx); err != nil {
+				logger.Warn("readiness check failed", "error", err)
+				healthServer.MarkNotServing()
+				continue
+			}
+
+			healthServer.MarkServing()
+		}
+	}
+
 }

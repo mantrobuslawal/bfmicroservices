@@ -1,371 +1,211 @@
-# gRPC Health Check Package
+# Platform Healthcheck
 
-This package provides shared helpers for registering and managing the standard gRPC health service across **bfstore** services.
+The `healthcheck` package provides shared gRPC health-check wiring for bfstore services.
 
-Recommended location:
+It wraps the standard gRPC health service and gives services a small, consistent API for:
 
-```text
-pkg/platform/grpc/healthcheck/
-```
+* registering service health status;
+* marking services as `SERVING`;
+* marking services as `NOT_SERVING`;
+* exposing the standard `grpc.health.v1.Health` API;
+* coordinating health status during startup, readiness checks, and graceful shutdown.
 
-Suggested files:
+This package is intended for reusable platform-level health behaviour. It does not contain service-specific dependency checks such as MySQL queries, Kafka connectivity checks, cache checks, or domain-specific readiness rules. These checks belong inside each service.
 
-```text
-pkg/platform/grpc/healthcheck/
-├── README.md
-└── server.go
-```
+For example, the catalog service can own the logic for checking whether its MySQL database is reachable, while this package owns the standard gRPC health service registration and status management.
 
----
+## Responsibilities
 
-## Purpose
+This package is responsible for:
 
-This package should make it easy for each bfstore service to:
+* registering the standard gRPC health server;
+* tracking whole-server and service-specific health status;
+* marking services as `SERVING`;
+* marking services as `NOT_SERVING`;
+* supporting graceful shutdown by moving services to `NOT_SERVING`;
+* giving all bfstore services a consistent health-check integration pattern.
 
-```text
-register the standard gRPC health service
-track whole-server health
-track service-specific health
-mark services SERVING
-mark services NOT_SERVING
-support graceful shutdown
-keep health behaviour consistent across services
-```
+## Non-responsibilities
 
-It should stay small and boring.
+This package does not:
 
-Do not build a complex health framework before bfstore needs one.
+* connect to service databases;
+* know about service repositories;
+* run SQL queries;
+* know about Kafka topics, consumers, or producers;
+* decide whether a specific service is ready;
+* contain business logic;
+* replace service-owned readiness checks.
 
----
-
-## Why This Lives Under `pkg/platform`
-
-Health checking is a shared platform concern.
-
-It should be consistent across:
+Service-specific readiness checks should live in service-local packages such as:
 
 ```text
-catalog-service
-basket-service
-inventory-service
-order-service
-payment-service
-shipping-service
-notification-service
+services/catalog-service/internal/health
+services/basket-service/internal/health
+services/inventory-service/internal/health
 ```
 
-A shared package avoids each service inventing a slightly different health implementation.
+## Package boundary
 
----
-
-## Package Responsibilities
-
-This package may provide:
+The intended split is:
 
 ```text
-Manager type
-NewManager function
-RegisterService method
-MarkServing method
-MarkNotServing method
-MarkServiceServing method
-MarkServiceNotServing method
-Shutdown method
+pkg/platform/healthcheck
+  Shared gRPC health server registration and status management.
+
+services/<service-name>/internal/health
+  Service-specific dependency checks and readiness decisions.
 ```
 
-It should wrap:
+For example:
+
+```text
+Catalog service readiness:
+  - Can the process run?
+  - Can it reach MySQL?
+  - Can it safely serve catalog requests?
+
+Platform healthcheck:
+  - Register grpc.health.v1.Health.
+  - Mark the catalog service SERVING.
+  - Mark the catalog service NOT_SERVING during shutdown.
+```
+
+## Example usage
+
+A service can create a health manager during startup:
 
 ```go
-google.golang.org/grpc/health
-google.golang.org/grpc/health/grpc_health_v1
-```
-
----
-
-## Example API Shape
-
-Possible implementation shape:
-
-```go
-package healthcheck
-
-import (
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/health"
-    healthpb "google.golang.org/grpc/health/grpc_health_v1"
-)
-
-type Manager struct {
-    server   *health.Server
-    services []string
-}
-
-func NewManager(grpcServer *grpc.Server) *Manager {
-    healthServer := health.NewServer()
-    healthpb.RegisterHealthServer(grpcServer, healthServer)
-
-    return &Manager{
-        server: healthServer,
-    }
-}
-
-func (m *Manager) RegisterService(serviceName string) {
-    m.services = append(m.services, serviceName)
-    m.server.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
-}
-
-func (m *Manager) MarkServing() {
-    m.server.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-
-    for _, serviceName := range m.services {
-        m.server.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
-    }
-}
-
-func (m *Manager) MarkNotServing() {
-    m.server.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
-
-    for _, serviceName := range m.services {
-        m.server.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
-    }
-}
-
-func (m *Manager) MarkServiceServing(serviceName string) {
-    m.server.SetServingStatus(serviceName, healthpb.HealthCheckResponse_SERVING)
-}
-
-func (m *Manager) MarkServiceNotServing(serviceName string) {
-    m.server.SetServingStatus(serviceName, healthpb.HealthCheckResponse_NOT_SERVING)
-}
-
-func (m *Manager) Shutdown() {
-    m.MarkNotServing()
-    m.server.Shutdown()
-}
-```
-
-This is intentionally small.
-
-Keep it boring where production matters.
-
----
-
-## Example Usage in `catalog-service`
-
-```go
-const catalogServiceName = "bfstore.catalog.v1.CatalogService"
-
-grpcServer := grpc.NewServer()
-
 healthManager := healthcheck.NewManager(grpcServer)
-healthManager.RegisterService(catalogServiceName)
 
-// Start unavailable until dependencies are ready.
+healthManager.RegisterService("bfstore.catalog.v1.CatalogService")
+```
+
+After service dependencies have passed readiness checks:
+
+```go
+if err := catalogHealthChecker.Ready(ctx); err != nil {
+	logger.Error("catalog service is not ready", "error", err)
+	os.Exit(1)
+}
+
+healthManager.MarkServing()
+```
+
+During graceful shutdown:
+
+```go
 healthManager.MarkNotServing()
+healthManager.Shutdown()
+```
 
-catalogv1.RegisterCatalogServiceServer(
-    grpcServer,
-    catalogHandler,
-)
+## Example startup flow
 
-if err := catalogDependencies.Ready(ctx); err != nil {
-    logger.Error("catalog-service dependencies not ready", "error", err)
-} else {
-    healthManager.MarkServing()
+A typical service startup flow should look like this:
+
+```text
+1. Load configuration.
+2. Create logger.
+3. Open database or external dependencies.
+4. Create service-specific health checker.
+5. Run readiness checks.
+6. Create gRPC server.
+7. Register service handlers.
+8. Register platform health manager.
+9. Mark service SERVING.
+10. Start serving gRPC traffic.
+```
+
+## Example shutdown flow
+
+A typical graceful shutdown flow should look like this:
+
+```text
+1. Receive SIGINT or SIGTERM.
+2. Mark service NOT_SERVING.
+3. Stop accepting new traffic.
+4. Allow in-flight gRPC requests to finish.
+5. Force stop if graceful shutdown times out.
+6. Close database connections and other resources.
+```
+
+## Health statuses
+
+The package uses the standard gRPC health statuses:
+
+```text
+SERVING
+NOT_SERVING
+UNKNOWN
+SERVICE_UNKNOWN
+```
+
+For bfstore services, the normal lifecycle should be:
+
+```text
+startup      -> NOT_SERVING
+ready        -> SERVING
+shutting down -> NOT_SERVING
+stopped      -> NOT_SERVING
+```
+
+## Checking health with grpcurl
+
+Once a service has registered the health server, check overall health with:
+
+```bash
+grpcurl -plaintext \
+  -d '{}' \
+  localhost:50051 \
+  grpc.health.v1.Health/Check
+```
+
+Expected response:
+
+```json
+{
+  "status": "SERVING"
 }
 ```
 
----
+Check a specific service:
 
-## Example Runtime Dependency Monitor
+```bash
+grpcurl -plaintext \
+  -d '{"service":"bfstore.catalog.v1.CatalogService"}' \
+  localhost:50051 \
+  grpc.health.v1.Health/Check
+```
 
-```go
-func monitorHealth(
-    ctx context.Context,
-    logger *slog.Logger,
-    manager *healthcheck.Manager,
-    db *sql.DB,
-) {
-    ticker := time.NewTicker(10 * time.Second)
-    defer ticker.Stop()
+Expected response:
 
-    for {
-        select {
-        case <-ctx.Done():
-            manager.MarkNotServing()
-            return
-
-        case <-ticker.C:
-            pingCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-            err := db.PingContext(pingCtx)
-            cancel()
-
-            if err != nil {
-                logger.Error("dependency health check failed", "error", err)
-                manager.MarkNotServing()
-                continue
-            }
-
-            manager.MarkServing()
-        }
-    }
+```json
+{
+  "status": "SERVING"
 }
 ```
 
-This keeps the actual gRPC health `Check` call cheap because dependency checks happen separately.
+## Development guidance
 
----
+Use this package when adding health support to bfstore services.
 
-## Example Graceful Shutdown
+Keep the platform manager small and boring. It should provide shared health-check plumbing, not become a service orchestration framework.
 
-```go
-func shutdown(
-    logger *slog.Logger,
-    grpcServer *grpc.Server,
-    healthManager *healthcheck.Manager,
-) {
-    logger.Info("marking service not serving")
-    healthManager.Shutdown()
-
-    done := make(chan struct{})
-
-    go func() {
-        grpcServer.GracefulStop()
-        close(done)
-    }()
-
-    select {
-    case <-done:
-        logger.Info("grpc server stopped gracefully")
-
-    case <-time.After(10 * time.Second):
-        logger.Warn("grpc graceful stop timed out; forcing stop")
-        grpcServer.Stop()
-    }
-}
-```
-
----
-
-## Service Names
-
-Use fully-qualified Protobuf service names.
-
-Examples:
+A good rule:
 
 ```text
-bfstore.catalog.v1.CatalogService
-bfstore.basket.v1.BasketService
-bfstore.inventory.v1.InventoryService
-bfstore.order.v1.OrderService
-bfstore.payment.v1.PaymentService
-bfstore.shipping.v1.ShippingService
-bfstore.notification.v1.NotificationService
+If the code manages gRPC health status, it belongs here.
+If the code checks whether a service dependency is available, it belongs in that service.
 ```
 
-These should match the names used in the `.proto` service definitions.
+## Future improvements
 
----
+Possible future additions include:
 
-## Kubernetes Probe Examples
+* health status change logging;
+* service-specific status helpers;
+* readiness monitor helpers;
+* test utilities for asserting health status;
+* Kubernetes probe documentation;
+* integration with OpenTelemetry metrics.
 
-Readiness should use service-specific health:
-
-```yaml
-readinessProbe:
-  grpc:
-    port: 50051
-    service: bfstore.catalog.v1.CatalogService
-  initialDelaySeconds: 5
-  periodSeconds: 10
-  timeoutSeconds: 2
-  failureThreshold: 3
-```
-
-Liveness can use whole-server health:
-
-```yaml
-livenessProbe:
-  grpc:
-    port: 50051
-    service: ""
-  initialDelaySeconds: 10
-  periodSeconds: 20
-  timeoutSeconds: 2
-  failureThreshold: 3
-```
-
----
-
-## Testing Guidance
-
-Recommended tests for this package:
-
-```text
-NewManager registers health service
-RegisterService starts service as NOT_SERVING
-MarkServing marks whole-server and registered services SERVING
-MarkNotServing marks whole-server and registered services NOT_SERVING
-MarkServiceServing affects one service
-MarkServiceNotServing affects one service
-Shutdown marks services NOT_SERVING and shuts down health server
-```
-
-Recommended service tests:
-
-```text
-service starts NOT_SERVING before dependencies are ready
-service becomes SERVING after dependency readiness passes
-service becomes NOT_SERVING when dependency monitor fails
-service becomes NOT_SERVING during shutdown
-```
-
----
-
-## What This Package Should Not Do
-
-Do not put business readiness rules directly into this package.
-
-Bad:
-
-```text
-healthcheck package knows catalog database schema details
-healthcheck package knows payment provider logic
-healthcheck package runs checkout simulations
-```
-
-Good:
-
-```text
-catalog-service checks catalogue dependencies
-payment-service checks payment dependencies
-healthcheck package only exposes status management helpers
-```
-
-The service owns its readiness logic.
-
-The shared package owns the standard gRPC health plumbing.
-
----
-
-## Practical Rules
-
-```text
-Keep the package small.
-Use the standard gRPC health service.
-Start NOT_SERVING.
-Mark SERVING only after service dependencies are ready.
-Mark NOT_SERVING before graceful shutdown.
-Expose both whole-server and service-specific health.
-Do not put service-specific business dependency logic in the shared package.
-Do not perform expensive checks inside health RPC handlers.
-```
-
----
-
-## Final Rule
-
-```text
-The healthcheck package should provide the traffic signal.
-Each service decides when the light should be green.
-```
