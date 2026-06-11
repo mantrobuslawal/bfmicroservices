@@ -42,12 +42,23 @@ func main() {
 	}
 	defer closeDatabase(logger, db)
 
-	/*
-		if err := database.Ping(ctx, db); err != nil {
-			logger.Error("database ping failed", "error", err)
-			os.Exit(1)
-		}
-	*/
+	logger.Info("database connection opened")
+
+	if err := database.Ping(ctx, db); err != nil {
+		logger.Error("database ping failed", "error", err)
+		os.Exit(1)
+	}
+
+	logger.Info("database readiness check passed")
+
+	repository := catalog.NewMySQLRepository(db)
+	service := catalog.NewService(repository)
+	grpcServer := cataloggrpc.NewServer(service, logger)
+
+	if cfg.EnableGRPCReflection {
+		reflection.Register(grpcServer)
+		logger.Info("grpc reflection enabled")
+	}
 
 	healthchecker := cataloghealth.NewChecker(db)
 
@@ -55,10 +66,6 @@ func main() {
 		logger.Error("service is not ready", "error", err)
 		os.Exit(1)
 	}
-
-	repository := catalog.NewMySQLRepository(db)
-	service := catalog.NewService(repository)
-	grpcServer := cataloggrpc.NewServer(service, logger)
 
 	healthServer := grpchealth.NewServer()
 	healthv1.RegisterHealthServer(grpcServer, healthServer)
@@ -68,10 +75,7 @@ func main() {
 	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_SERVING)
 
-	if cfg.EnableGRPCReflection {
-		reflection.Register(grpcServer)
-		logger.Info("grpc reflection enabled")
-	}
+	logger.Info("grpc health service is registered")
 
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
