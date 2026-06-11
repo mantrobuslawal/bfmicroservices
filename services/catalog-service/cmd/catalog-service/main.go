@@ -87,13 +87,30 @@ func main() {
 		}
 	}()
 
-	// TODO
-	/*
-		go func(){
-			ticker := time
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
 
-		}()
-	*/
+		for {
+			select {
+			case <-ctx.Done():
+				healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
+				healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
+				return
+
+			case <-ticker.C:
+				if err := healthchecker.Ready(ctx); err != nil {
+					logger.Warn("readiness check failed", "error", err)
+					healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
+					healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
+					continue
+				}
+
+				healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
+				healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_SERVING)
+			}
+		}
+	}()
 
 	<-ctx.Done()
 
