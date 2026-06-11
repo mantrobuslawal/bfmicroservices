@@ -10,14 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mantrobuslawal/bfstore/pkg/platform/healthcheck"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/database"
 	cataloggrpc "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/grpcadapter"
 	cataloghealth "github.com/mantrobuslawal/bfstore/services/catalog-service/internal/health"
 
-	grpchealth "google.golang.org/grpc/health"
-	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -53,22 +52,21 @@ func main() {
 		logger.Info("grpc reflection enabled")
 	}
 
-	healthchecker := cataloghealth.NewChecker(db)
+	const catalogServiceName = "bfstore.catalog.v1.CatalogService"
 
-	if err := healthchecker.Ready(ctx); err != nil {
+	healthManager := healthcheck.NewManager(grpcServer)
+	healthManager.RegisterService(catalogServiceName)
+
+	catalogHealthchecker := cataloghealth.NewChecker(db)
+
+	if err := catalogHealthchecker.Ready(ctx); err != nil {
 		logger.Error("service is not ready", "error", err)
 		os.Exit(1)
 	}
 
 	logger.Info("database readiness check passed")
 
-	healthServer := grpchealth.NewServer()
-	healthv1.RegisterHealthServer(grpcServer, healthServer)
-
-	const catalogServiceName = "bfstore.catalog.v1.CatalogService"
-
-	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_SERVING)
+	healthManager.MarkServing()
 
 	logger.Info("grpc health service is registered")
 
@@ -85,7 +83,7 @@ func main() {
 		serverErr <- grpcServer.Serve(listener)
 	}()
 
-	go func() { monitorReadiness(ctx, logger, healthchecker, healthServer, catalogServiceName) }()
+	go func() { monitorReadiness(ctx, logger, catalogHealthchecker, healthManager) }()
 
 	select {
 	case <-ctx.Done():
@@ -99,9 +97,8 @@ func main() {
 	}
 
 	logger.Info("marking service not serving")
-	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
-	healthServer.SetServingStatus(catalogServiceName, healthv1.HealthCheckResponse_NOT_SERVING)
-	healthServer.Shutdown()
+	healthManager.MarkNotServing()
+	healthManager.Shutdown()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -131,8 +128,7 @@ func monitorReadiness(
 	ctx context.Context,
 	logger *slog.Logger,
 	checker *cataloghealth.Checker,
-	healthServer *grpchealth.Server,
-	serviceName string,
+	healthServer *healthcheck.Manager,
 ) {
 
 	ticker := time.NewTicker(10 * time.Second)
@@ -141,20 +137,17 @@ func monitorReadiness(
 	for {
 		select {
 		case <-ctx.Done():
-			healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
-			healthServer.SetServingStatus(serviceName, healthv1.HealthCheckResponse_NOT_SERVING)
+			healthServer.MarkNotServing()
 			return
 
 		case <-ticker.C:
 			if err := checker.Ready(ctx); err != nil {
 				logger.Warn("readiness check failed", "error", err)
-				healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
-				healthServer.SetServingStatus(serviceName, healthv1.HealthCheckResponse_NOT_SERVING)
+				healthServer.MarkNotServing()
 				continue
 			}
 
-			healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
-			healthServer.SetServingStatus(serviceName, healthv1.HealthCheckResponse_SERVING)
+			healthServer.MarkServing()
 		}
 	}
 
