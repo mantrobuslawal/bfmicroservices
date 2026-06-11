@@ -1,164 +1,119 @@
-# gRPC Interceptors Package
+# gRPC Interceptors
 
-This package contains shared gRPC interceptors for **bfstore** services.
+The `interceptors` package contains shared gRPC interceptors for bfstore services.
 
 Interceptors provide reusable middleware for cross-cutting service concerns such as:
 
-```text
-panic recovery
-correlation IDs
-request logging
-metrics
-OpenTelemetry tracing
-authentication
-authorisation
-client-side metadata propagation
-```
+* panic recovery;
+* correlation ID propagation;
+* request logging;
+* metrics;
+* OpenTelemetry tracing;
+* authentication;
+* authorisation;
+* client-side metadata propagation.
 
-They keep service handlers focused on business logic.
+They keep service handlers focused on transport adaptation and business logic instead of operational plumbing.
 
----
-
-## Recommended Package Location
+## Package location
 
 ```text
-pkg/platform/grpc/interceptors/
+pkg/platform/grpc/interceptors
 ```
 
-Suggested structure:
+Current package structure:
 
 ```text
 pkg/platform/grpc/interceptors/
 ├── README.md
 ├── correlation.go
+├── correlation_test.go
 ├── logging.go
+├── logging_test.go
 ├── recovery.go
-├── metrics.go
-├── auth.go
-└── client.go
+└── recovery_test.go
 ```
 
-This package can be reused by:
+Future additions may include:
 
 ```text
-catalog-service
-basket-service
-inventory-service
-order-service
-payment-service
-shipping-service
-notification-service
+metrics.go
+tracing.go
+auth.go
+client_correlation.go
+client_logging.go
 ```
 
----
+## Why this lives under `pkg/platform`
 
-## Why This Lives Under `pkg/platform`
+These interceptors are shared platform concerns, not catalog-service-specific business logic.
 
-The interceptors are shared platform concerns, not business logic for one service.
+This package is appropriate because it:
 
-`pkg/platform/grpc/interceptors` is appropriate because:
+* can be reused by multiple bfstore services;
+* standardises gRPC behaviour across the platform;
+* keeps service handlers clean;
+* makes runtime behaviour easier to test;
+* demonstrates mature platform engineering practice.
 
-```text
-multiple services can reuse it
-it standardises behaviour across the platform
-it keeps handlers clean
-it demonstrates mature platform engineering practice
-```
+Use this package for behaviour that should be consistent across services such as `catalog-service`, `basket-service`, `inventory-service`, `order-service`, `payment-service`, `shipping-service`, and `notification-service`.
 
-If an interceptor becomes specific to one service, keep that service-specific interceptor inside that service instead.
+If an interceptor becomes specific to one service, keep it inside that service instead.
 
 Example:
 
 ```text
-services/payment-service/internal/grpc/interceptors/
+services/payment-service/internal/grpcadapter/interceptors/
 ```
 
-Only use the shared package for genuinely reusable behaviour.
-
----
-
-## Practical Rule
+## Practical rule
 
 ```text
 Interceptors handle cross-cutting concerns.
-Handlers and services handle business concerns.
+Handlers and services handle transport and business concerns.
 ```
 
-Do not put checkout orchestration, payment authorisation rules, inventory reservation rules, or catalogue business logic inside interceptors.
+Do not put checkout orchestration, payment authorisation rules, inventory reservation rules, catalog business logic, database setup, Kafka consumer lifecycle, service startup, or background worker logic inside interceptors.
 
----
+## Current interceptors
 
-## Recommended Initial Interceptors
-
-For early bfstore gRPC services, start with:
-
-```text
-UnaryRecovery
-UnaryCorrelationID
-UnaryLogging
-UnaryClientCorrelation
-UnaryClientLogging
-```
-
-Add later:
-
-```text
-UnaryMetrics
-UnaryTracing
-UnaryAuth
-UnaryAuthorisation
-UnaryRateLimit
-UnaryFaultInjection for local/dev/test only
-streaming variants when streaming RPCs are introduced
-```
-
-Keep the first implementation small and reliable.
-
----
-
-## Server Interceptor Chain
-
-Recommended local/dev server chain:
+The current server-side unary interceptors are:
 
 ```go
-grpcServer := grpc.NewServer(
-    grpc.ChainUnaryInterceptor(
-        interceptors.UnaryRecovery(logger),
-        interceptors.UnaryCorrelationID(logger),
-        interceptors.UnaryLogging(logger),
-    ),
+UnaryRecoveryInterceptor(logger)
+UnaryCorrelationIDInterceptor()
+UnaryLoggingInterceptor(logger)
+```
+
+## Recommended server chain
+
+Recommended server-side chain:
+
+```go
+grpc.NewServer(
+	grpc.ChainUnaryInterceptor(
+		interceptors.UnaryRecoveryInterceptor(logger),
+		interceptors.UnaryCorrelationIDInterceptor(),
+		interceptors.UnaryLoggingInterceptor(logger),
+	),
 )
 ```
 
-Later, when metrics and auth are added:
-
-```go
-grpcServer := grpc.NewServer(
-    grpc.ChainUnaryInterceptor(
-        interceptors.UnaryRecovery(logger),
-        interceptors.UnaryCorrelationID(logger),
-        interceptors.UnaryLogging(logger),
-        interceptors.UnaryMetrics(metrics),
-        interceptors.UnaryAuth(authenticator),
-    ),
-)
-```
-
----
-
-## Interceptor Order
+## Interceptor order
 
 Order matters.
 
+Given this chain:
+
 ```go
 grpc.ChainUnaryInterceptor(
-    A,
-    B,
-    C,
+	A,
+	B,
+	C,
 )
 ```
 
-Call flow:
+The call flow is:
 
 ```text
 request
@@ -172,14 +127,12 @@ request
 response
 ```
 
-Recommended order:
+For bfstore services, use this order:
 
 ```text
 Recovery
 -> Correlation ID
 -> Logging
--> Metrics
--> Auth
 -> Handler
 ```
 
@@ -187,354 +140,368 @@ Why:
 
 ```text
 Recovery catches panics from later interceptors and handlers.
-Correlation runs before logging so logs include correlation ID.
-Logging records method, status, duration, and correlation ID.
-Metrics records status and duration.
-Auth blocks unauthenticated calls before business logic.
+Correlation ID ensures the request context has a stable request identifier.
+Logging records method, status, duration, error, and correlation ID.
+The handler runs service-specific request logic.
 ```
 
----
+When metrics, tracing, and auth are added, a likely order is:
 
-## Recovery Interceptor
+```go
+grpc.NewServer(
+	grpc.ChainUnaryInterceptor(
+		interceptors.UnaryRecoveryInterceptor(logger),
+		interceptors.UnaryCorrelationIDInterceptor(),
+		interceptors.UnaryLoggingInterceptor(logger),
+		interceptors.UnaryMetricsInterceptor(metrics),
+		interceptors.UnaryTracingInterceptor(tracer),
+		interceptors.UnaryAuthInterceptor(authenticator),
+	),
+)
+```
+
+The exact order may change when auth and tracing are implemented, but recovery should remain near the outer edge of the chain.
+
+## Recovery interceptor
+
+```go
+UnaryRecoveryInterceptor(logger)
+```
 
 Purpose:
 
 ```text
 catch panics
-log safely
+log panic details server-side
 return codes.Internal
 avoid exposing stack traces to clients
+prevent one bad request from crashing the service process
 ```
 
-Example shape:
+Expected behaviour:
 
-```go
-func UnaryRecovery(logger *slog.Logger) grpc.UnaryServerInterceptor {
-    return func(
-        ctx context.Context,
-        req any,
-        info *grpc.UnaryServerInfo,
-        handler grpc.UnaryHandler,
-    ) (resp any, err error) {
-        defer func() {
-            if recovered := recover(); recovered != nil {
-                logger.Error(
-                    "panic recovered in grpc handler",
-                    "grpc.method", info.FullMethod,
-                    "panic", recovered,
-                )
-
-                err = status.Error(codes.Internal, "internal server error")
-            }
-        }()
-
-        return handler(ctx, req)
-    }
-}
+```text
+normal response -> returned unchanged
+normal error    -> returned unchanged
+panic           -> recovered and converted to codes.Internal
+nil logger      -> falls back to slog.Default()
 ```
 
 Recovery is a safety net, not a substitute for fixing bugs.
 
----
+## Correlation ID interceptor
 
-## Correlation ID Interceptor
+```go
+UnaryCorrelationIDInterceptor()
+```
 
 Purpose:
 
 ```text
-read x-correlation-id from incoming metadata
-generate one if absent
-store it in context
-make it available to logs and outbound calls
+read x-correlation-id from incoming gRPC metadata
+generate a correlation ID if absent
+store the correlation ID in context
+send the correlation ID back as response metadata
+make the correlation ID available to logging and later outbound calls
 ```
 
-Example metadata key:
+Metadata key:
 
 ```text
 x-correlation-id
 ```
 
-Checkout example:
+Context helpers:
+
+```go
+ContextWithCorrelationID(ctx, correlationID)
+CorrelationIDFromContext(ctx)
+```
+
+Example request flow:
+
+```text
+incoming request
+-> read x-correlation-id metadata
+-> reuse incoming value or generate a new one
+-> store value in context
+-> send value as response header
+-> call handler
+```
+
+Example distributed flow:
 
 ```text
 api-gateway
--> order-service
+-> catalog-service
 -> inventory-service
--> payment-service
--> shipping-service
+-> order-service
 ```
 
-The same correlation ID should appear in logs across the whole flow.
+The same correlation ID should appear in logs across the whole request path.
 
----
+## Logging interceptor
 
-## Logging Interceptor
+```go
+UnaryLoggingInterceptor(logger)
+```
 
 Purpose:
 
 ```text
-log every RPC consistently
-include method name
-include status code
+log every unary RPC consistently
+include gRPC method name
+include gRPC status code
 include duration
-include correlation ID where available
+include error details on failure
+include correlation ID when available
 ```
 
-Example log fields:
+Current log fields:
 
 ```text
 grpc.method
-grpc.status_code
+grpc.code
 duration_ms
 correlation_id
+error
 ```
 
-This makes debugging service behaviour far easier.
-
----
-
-## Metrics Interceptor
-
-Purpose:
+Example successful request log fields:
 
 ```text
-record RPC count
-record RPC duration
-record status code
-record method name
+grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts
+grpc.code=OK
+duration_ms=12
+correlation_id=local-dev-123
 ```
 
-Useful dashboard views:
+Example failed request log fields:
 
 ```text
-CatalogService/GetProduct p95 latency
-OrderService/Checkout error rate
-PaymentService/AuthorisePayment DeadlineExceeded count
-InventoryService/ReserveStock Aborted count
+grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts
+grpc.code=InvalidArgument
+duration_ms=3
+correlation_id=local-dev-123
+error="rpc error: code = InvalidArgument desc = invalid page size"
 ```
 
-Metrics turns “it feels slow” into evidence.
+The logging interceptor should not alter handler responses or errors. It observes the request outcome and records useful operational context.
 
----
+## Suggested usage in `catalog-service`
 
-## Auth Interceptor
-
-Purpose:
-
-```text
-read authorization metadata
-validate credentials
-attach principal to context
-return codes.Unauthenticated for invalid/missing credentials
-return codes.PermissionDenied when identity is valid but not allowed
-```
-
-Initial local development may skip auth. Document the intended position now and implement later.
-
-Do not log raw auth tokens.
-
----
-
-## Client Correlation Interceptor
-
-Purpose:
-
-```text
-copy current correlation ID from context
-append it to outgoing gRPC metadata
-```
-
-Example:
+In `services/catalog-service/internal/grpcadapter/server.go`:
 
 ```go
-ctx = metadata.AppendToOutgoingContext(
-    ctx,
-    "x-correlation-id",
-    correlationID,
+package grpcadapter
+
+import (
+	"log/slog"
+
+	"github.com/mantrobuslawal/bfstore/pkg/platform/grpc/interceptors"
+	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
+
+	catalogv1 "github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1"
+	"google.golang.org/grpc"
+)
+
+func NewServer(catalogService *catalog.Service, logger *slog.Logger) *grpc.Server {
+	server := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			interceptors.UnaryRecoveryInterceptor(logger),
+			interceptors.UnaryCorrelationIDInterceptor(),
+			interceptors.UnaryLoggingInterceptor(logger),
+		),
+	)
+
+	handler := NewCatalogHandler(catalogService, logger)
+
+	catalogv1.RegisterCatalogServiceServer(server, handler)
+
+	return server
+}
+```
+
+If you alias the import to make call sites clearer:
+
+```go
+platforminterceptors "github.com/mantrobuslawal/bfstore/pkg/platform/grpc/interceptors"
+```
+
+then use:
+
+```go
+grpc.NewServer(
+	grpc.ChainUnaryInterceptor(
+		platforminterceptors.UnaryRecoveryInterceptor(logger),
+		platforminterceptors.UnaryCorrelationIDInterceptor(),
+		platforminterceptors.UnaryLoggingInterceptor(logger),
+	),
 )
 ```
 
-This should be used by services making outbound calls, especially:
+## Smoke test with grpcurl
 
-```text
-order-service -> inventory-service
-order-service -> payment-service
-order-service -> shipping-service
-api-gateway -> catalog-service
-api-gateway -> basket-service
+Start the catalog service with reflection enabled, then run:
+
+```bash
+grpcurl -plaintext localhost:50051 list
 ```
 
----
-
-## Client Logging Interceptor
-
-Purpose:
+Expected services should include:
 
 ```text
-log outbound RPCs consistently
-include method
-status code
-duration
-correlation ID
-target service where available
+bfstore.catalog.v1.CatalogService
+grpc.health.v1.Health
+grpc.reflection.v1.ServerReflection
 ```
 
-This is useful when debugging orchestration flows such as checkout.
+Send a request with an explicit correlation ID:
 
----
+```bash
+grpcurl -plaintext \
+  -H 'x-correlation-id: local-dev-123' \
+  -d '{"page":{"page_size":5}}' \
+  localhost:50051 \
+  bfstore.catalog.v1.CatalogService/ListProducts
+```
 
-## What Not To Put In Interceptors
-
-Do not put business workflows in interceptors.
-
-Bad:
+Expected behaviour:
 
 ```text
-Checkout interceptor reserves stock and authorises payment.
+request succeeds or fails normally
+logs include correlation_id=local-dev-123
+logs include grpc.method
+logs include grpc.code
+logs include duration_ms
 ```
 
-Good:
+Send a request without a correlation ID:
+
+```bash
+grpcurl -plaintext \
+  -d '{"page":{"page_size":5}}' \
+  localhost:50051 \
+  bfstore.catalog.v1.CatalogService/ListProducts
+```
+
+Expected behaviour:
 
 ```text
-Order service application layer orchestrates checkout.
-Interceptors log, trace, authenticate, and recover.
+request succeeds or fails normally
+correlation interceptor generates a new ID
+logs include the generated correlation_id
 ```
+
+## Suggested Makefile target
+
+```makefile
+.PHONY: catalog-list-products-with-correlation
+catalog-list-products-with-correlation:
+	grpcurl -plaintext \
+		-H 'x-correlation-id: local-dev-123' \
+		-d '{"page":{"page_size":5}}' \
+		localhost:50051 \
+		bfstore.catalog.v1.CatalogService/ListProducts
+```
+
+## Testing guidance
+
+Each interceptor should have focused unit tests.
+
+Recommended test coverage:
+
+```text
+recovery interceptor:
+  successful response passes through
+  normal error passes through
+  panic is recovered
+  panic returns codes.Internal
+  nil logger is safe
+  handler is called once
+
+correlation ID interceptor:
+  incoming x-correlation-id is preserved
+  missing x-correlation-id generates a new ID
+  whitespace-only x-correlation-id is treated as missing
+  correlation ID is stored in context
+  handler response passes through
+  handler error passes through
+  handler is called once
+
+logging interceptor:
+  successful response passes through
+  normal error passes through
+  non-gRPC error passes through
+  nil logger is safe
+  handler is called once
+  correlation_id is logged when present
+  correlation_id is not logged when absent
+  correlation_id is logged on error
+```
+
+Useful Go packages for tests:
+
+```go
+context
+bytes
+errors
+io
+log/slog
+strings
+testing
+
+google.golang.org/grpc
+google.golang.org/grpc/codes
+google.golang.org/grpc/metadata
+google.golang.org/grpc/status
+```
+
+## What not to put in interceptors
 
 Do not use interceptors for:
 
 ```text
 database connection setup
+repository construction
 Kafka consumer lifecycle
-loading configuration
-choosing TCP ports
-TLS certificate setup
+configuration loading
+port selection
+TLS certificate loading
 service startup
 background workers
+business workflows
+checkout orchestration
+inventory reservation rules
+payment authorisation rules
+catalog domain logic
 ```
 
-Those belong in application bootstrap code.
+Those belong in application bootstrap code, service packages, or domain/application layers.
 
----
+## Future work
 
-## Suggested Usage in `catalog-service`
-
-```go
-package main
-
-import (
-    "log/slog"
-
-    "google.golang.org/grpc"
-
-    "github.com/mantrobuslawal/bfstore/pkg/platform/grpc/interceptors"
-)
-
-func newGRPCServer(logger *slog.Logger) *grpc.Server {
-    return grpc.NewServer(
-        grpc.ChainUnaryInterceptor(
-            interceptors.UnaryRecovery(logger),
-            interceptors.UnaryCorrelationID(logger),
-            interceptors.UnaryLogging(logger),
-        ),
-    )
-}
-```
-
----
-
-## Suggested Usage in `order-service`
-
-`order-service` is an orchestrator and will make outbound calls to other services.
-
-It should use both server-side and client-side interceptors.
-
-Server-side:
-
-```go
-grpc.NewServer(
-    grpc.ChainUnaryInterceptor(
-        interceptors.UnaryRecovery(logger),
-        interceptors.UnaryCorrelationID(logger),
-        interceptors.UnaryLogging(logger),
-    ),
-)
-```
-
-Client-side:
-
-```go
-conn, err := grpc.NewClient(
-    target,
-    grpc.WithTransportCredentials(insecure.NewCredentials()),
-    grpc.WithChainUnaryInterceptor(
-        interceptors.UnaryClientCorrelation(),
-        interceptors.UnaryClientLogging(logger),
-    ),
-)
-```
-
----
-
-## Testing Guidance
-
-Each interceptor should have focused unit tests.
-
-Recommended tests:
+Likely future additions:
 
 ```text
-recovery interceptor converts panic to codes.Internal
-correlation interceptor preserves incoming x-correlation-id
-correlation interceptor generates ID when absent
-client correlation interceptor appends outgoing metadata
-logging interceptor calls handler exactly once
-auth interceptor rejects missing authorization metadata
-auth interceptor passes valid principal to handler
+UnaryMetricsInterceptor
+UnaryTracingInterceptor
+UnaryAuthInterceptor
+UnaryAuthorisationInterceptor
+UnaryClientCorrelationInterceptor
+UnaryClientLoggingInterceptor
+streaming interceptor variants
 ```
 
-Use:
+Add new interceptors only when a real service need appears. Keep the package small, tested, and boring.
 
-```go
-metadata.NewIncomingContext
-metadata.AppendToOutgoingContext
-metadata.FromOutgoingContext
-status.Code
-```
-
-for tests.
-
----
-
-## Portfolio Value
-
-This package demonstrates that bfstore is not just a set of handlers.
-
-It shows:
+## Design summary
 
 ```text
-consistent service behaviour
-clean separation of concerns
-operability thinking
-observability readiness
-auth readiness
-platform reuse
-senior engineering judgement
+Recovery keeps the process alive.
+Correlation connects logs across a request path.
+Logging records what happened.
+Handlers execute service-specific request logic.
 ```
 
-Client/interview phrasing:
 
-```text
-I use shared gRPC interceptors for cross-cutting platform concerns such as
-recovery, correlation IDs, logging, metrics, authentication, and outbound
-metadata propagation, keeping service handlers focused on domain behaviour.
-```
-
----
-
-## Final Rule
-
-```text
-Keep boring platform behaviour centralised.
-Keep business behaviour explicit in services.
-```
-
-That is how bfstore stays clean as the number of services grows.
