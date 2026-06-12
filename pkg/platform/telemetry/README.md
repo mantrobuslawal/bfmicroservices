@@ -1,50 +1,40 @@
-# Telemetry Package
+# Platform Telemetry
 
-This package will contain shared OpenTelemetry setup helpers for **bfstore** Go services.
+The `telemetry` package provides shared OpenTelemetry bootstrap code for bfstore services.
 
-Recommended location:
+It is responsible for initialising service-level telemetry plumbing:
+
+- service identity;
+- resource attributes;
+- trace provider setup;
+- metric provider setup;
+- OTLP exporter configuration;
+- global trace context propagation;
+- graceful telemetry shutdown.
+
+It should stay small and boring. Service code should use this package to initialise telemetry during startup, then add instrumentation deliberately where it is useful.
+
+## Package location
 
 ```text
-pkg/platform/telemetry/
+pkg/platform/telemetry
 ```
 
-Suggested future files:
+Suggested package structure:
 
 ```text
 pkg/platform/telemetry/
 ├── README.md
-├── tracing.go
-├── metrics.go
-├── logging.go
-└── propagation.go
+├── config.go
+├── telemetry.go
+└── telemetry_test.go
 ```
 
----
+## What problem this solves
 
-## Purpose
+Without a shared telemetry bootstrap, every service would need to know how to configure OpenTelemetry providers and exporters.
 
-This package should provide reusable helpers for:
-
-```text
-initialising OpenTelemetry resources
-setting service.name and environment attributes
-creating tracer providers
-creating meter providers
-configuring OTLP exporters
-configuring context propagation
-supporting graceful telemetry shutdown
-linking logs with trace/correlation context
-```
-
-It should keep telemetry setup consistent across bfstore services.
-
----
-
-## Why This Lives Under `pkg/platform`
-
-Telemetry is a shared platform concern.
-
-It should be consistent across:
+That would create duplicated setup code across services such as:
 
 ```text
 catalog-service
@@ -56,192 +46,229 @@ shipping-service
 notification-service
 ```
 
-A shared package avoids each service copying slightly different OpenTelemetry setup.
+This package gives each service one consistent setup path.
 
----
+## Mental model
 
-## Expected Service Usage
+Telemetry is runtime evidence about what the service is doing.
 
-Future service startup shape:
+For bfstore, think of the signals like this:
+
+```text
+logs
+  What happened?
+
+traces
+  Where did this request go?
+
+metrics
+  How much, how often, how slow, how many?
+```
+
+This package focuses on OpenTelemetry traces and metrics.
+
+Logs remain handled by `log/slog` for now. The OpenTelemetry Go logs signal is still experimental, so bfstore should keep logging simple until the logs signal is more stable.
+
+## Key concepts
+
+### Resource
+
+A resource describes the entity producing telemetry.
+
+For a service, that means attributes such as:
+
+```text
+service.name=catalog-service
+service.version=<git-sha-or-build-version>
+deployment.environment.name=local
+```
+
+Resource attributes help telemetry backends group data by service and environment.
+
+### Tracer provider
+
+A tracer provider creates tracers.
+
+Tracers create spans.
+
+A span represents a unit of work, such as:
+
+```text
+handling a gRPC request
+running a database query
+publishing a Kafka event
+calling another service
+```
+
+### Meter provider
+
+A meter provider creates meters.
+
+Meters create metrics instruments.
+
+Metrics answer questions such as:
+
+```text
+How many requests are happening?
+How long are requests taking?
+How many errors are occurring?
+How many database connections are open?
+```
+
+### Exporter
+
+An exporter sends telemetry data out of the process.
+
+This package uses OTLP over gRPC, which is the standard OpenTelemetry Protocol export path.
+
+A typical local flow is:
+
+```text
+catalog-service
+  -> OTLP gRPC exporter
+  -> OpenTelemetry Collector
+  -> backend such as Jaeger, Tempo, Prometheus, or Grafana
+```
+
+### Propagator
+
+A propagator carries trace context across process boundaries.
+
+For example:
+
+```text
+api-gateway
+  -> catalog-service
+  -> inventory-service
+```
+
+The propagator allows those service calls to become part of the same distributed trace.
+
+This package configures:
+
+```text
+TraceContext
+Baggage
+```
+
+## Usage
+
+In a service startup path, create a config and call `Setup`.
+
+Example:
 
 ```go
-telemetryShutdown, err := telemetry.Init(ctx, telemetry.Config{
-    ServiceName: "bfstore-catalog-service",
-    Environment: "local",
-    Version: version,
-    OTLPEndpoint: cfg.OTLPEndpoint,
-})
+telemetryConfig := telemetry.DefaultConfig("catalog-service")
+telemetryConfig.Environment = cfg.Environment
+telemetryConfig.OTLPEndpoint = cfg.OTLPEndpoint
+telemetryConfig.OTLPInsecure = cfg.OTLPInsecure
+
+telemetryRuntime, err := telemetry.Setup(ctx, telemetryConfig)
 if err != nil {
-    return err
+	logger.Error("failed to setup telemetry", "error", err)
+	os.Exit(1)
 }
-defer telemetryShutdown(context.Background())
+
+defer func() {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := telemetryRuntime.Shutdown(shutdownCtx); err != nil {
+		logger.Error("failed to shutdown telemetry", "error", err)
+	}
+}()
 ```
 
-This is a future shape, not a requirement for the first implementation.
+## Config
 
----
+```go
+type Config struct {
+	ServiceName          string
+	ServiceVersion       string
+	Environment          string
+	OTLPEndpoint         string
+	OTLPInsecure         bool
+	TracesEnabled        bool
+	MetricsEnabled       bool
+	MetricExportInterval time.Duration
+}
+```
 
-## Configuration
+Use `DefaultConfig` for local defaults:
 
-Suggested config values:
+```go
+cfg := telemetry.DefaultConfig("catalog-service")
+```
+
+Defaults:
 
 ```text
-service_name
-service_version
-deployment_environment
-otlp_endpoint
-metrics_enabled
-traces_enabled
-logs_enabled
-sampling_ratio
+Environment:          local
+OTLPEndpoint:         localhost:4317
+OTLPInsecure:         true
+TracesEnabled:        true
+MetricsEnabled:       true
+MetricExportInterval: 30 seconds
 ```
 
-Environment variables may include:
+## Local development
+
+The default endpoint assumes an OpenTelemetry Collector listening on:
 
 ```text
-OTEL_SERVICE_NAME
-OTEL_EXPORTER_OTLP_ENDPOINT
-OTEL_RESOURCE_ATTRIBUTES
-OTEL_TRACES_SAMPLER
+localhost:4317
 ```
 
----
-
-## Tracing
-
-Tracing helpers should support:
+For Docker Compose, this will usually become something like:
 
 ```text
-service tracer creation
-gRPC server/client instrumentation
-manual spans for important business operations
-Kafka publish/consume spans
-MySQL spans where appropriate
+otel-collector:4317
 ```
 
----
+depending on whether the service runs on the host or inside the Compose network.
 
-## Metrics
+## Current scope
 
-Metrics helpers should support:
+This first telemetry package only initialises providers and exporters.
+
+It does not yet:
+
+- add gRPC server instrumentation;
+- add database instrumentation;
+- add Kafka instrumentation;
+- define custom business metrics;
+- configure an OpenTelemetry Collector;
+- emit OpenTelemetry logs.
+
+Those should be added in later slices.
+
+## Recommended next steps
+
+After this package is in place:
 
 ```text
-request counts
-request duration
-error counts
-checkout attempts
-checkout failures
-Kafka publish failures
-dependency latency
+1. Add telemetry config fields to catalog-service config.
+2. Call telemetry.Setup from catalog-service main.go.
+3. Add graceful telemetry shutdown.
+4. Add gRPC server instrumentation with otelgrpc.
+5. Add an OpenTelemetry Collector to docker-compose.
+6. Run a local trace smoke test.
 ```
 
-Keep metric labels low-cardinality.
+## Testing
 
----
+Run package tests:
 
-## Logging
+```bash
+go test ./pkg/platform/telemetry -v
+```
 
-Logging helpers should make it easier to include:
+The tests focus on configuration behaviour and disabled-signal setup. They deliberately avoid requiring a live OpenTelemetry Collector.
+
+## Design rule
 
 ```text
-correlation_id
-trace_id
-span_id
-service.name
-grpc.method
-grpc.status_code
+This package initialises telemetry plumbing.
+Service code decides what work is worth instrumenting.
 ```
 
-Start with structured `slog` and add helpers only where they reduce repeated code.
-
----
-
-## Propagation
-
-Propagation helpers should support:
-
-```text
-gRPC metadata propagation
-Kafka header propagation
-correlation_id propagation
-traceparent propagation
-```
-
----
-
-## Shutdown
-
-Telemetry providers/exporters must be flushed during graceful shutdown.
-
-Recommended sequence:
-
-```text
-mark health NOT_SERVING
-stop accepting new work
-finish in-flight requests where possible
-flush telemetry
-stop gRPC server
-close dependencies
-exit
-```
-
----
-
-## What This Package Should Not Do
-
-Do not put business observability decisions directly into this package.
-
-Bad:
-
-```text
-telemetry package knows checkout business rules
-telemetry package knows catalogue schema details
-telemetry package records payment-specific attributes automatically everywhere
-```
-
-Good:
-
-```text
-telemetry package configures common OpenTelemetry plumbing
-services add business-specific spans/attributes deliberately
-```
-
----
-
-## Testing Guidance
-
-Recommended tests:
-
-```text
-config builds expected resource attributes
-disabled telemetry path is safe in local tests
-shutdown function flushes providers
-trace context can be injected/extracted
-correlation ID is preserved where helper supports it
-metrics avoid high-cardinality labels
-```
-
----
-
-## Practical Rules
-
-```text
-Keep telemetry setup consistent.
-Set service.name correctly.
-Use OpenTelemetry standards where possible.
-Use structured logs.
-Propagate trace context through gRPC and Kafka.
-Keep attributes safe and low-cardinality.
-Do not log secrets.
-Flush telemetry during shutdown.
-Keep package helpers boring and small.
-```
-
----
-
-## Final Rule
-
-```text
-The telemetry package should provide the wiring.
-Services should decide what business events are worth observing.
-```
