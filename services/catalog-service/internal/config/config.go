@@ -55,7 +55,8 @@ func Load() (Config, error) {
 		Telemetry: TelemetryConfig{
 			Environment:           getEnv("ENVIRONMENT", "local"),
 			ServiceVersion:        getEnv("SERVICE_VERSION", ""),
-			OTLPEndpoint:          getEnv("OTLP_ENDPOINT", ""), // telemetry package config will set if absent
+			OTLPEndpoint:          getEnv("OTEL_EXPORTER_OLTP_ENDPOINT", ""), // telemetry package config will set if absent
+			OTLPInsecure:          loadBoolEnv("OTEL_EXPORTER_OTLP_INSECURE", true),
 			TelemetryEnabled:      loadBoolEnv("TELEMETRY_ENABLED", false),
 			TracesEnabled:         loadBoolEnv("TRACES_ENABLED", true),
 			MetricsEnabled:        loadBoolEnv("METRICS_ENABLED", true),
