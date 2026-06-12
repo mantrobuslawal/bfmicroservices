@@ -125,3 +125,21 @@ catalog-list-products-with-correlation: ## Test correlation id propagation
 	   -d '{"page": {"page_size":5}}' \
 	   localhost:50051 \
 	   bfstore.catalog.v1.CatalogService/ListProducts
+
+.PHONY: otel-up
+otel-up:   ## Start docker compose otel-collector
+	docker compose -f ${COMPOSE_FILE} up -d otel-collector
+
+.PHONY: otel-logs
+otel-logs:	## Follow docker compose otel-collector logs
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector
+
+.PHONY: catalog-run-telemetry
+catalog-run-telemetry:
+	cd services/catalog-service && \
+	   TELEMETRY_ENABLED=true \
+	   OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 \
+	   OTEL_EXPORTER_OTLP_INSECURE=true \
+	   GRPC_REFLECTION_ENABLED=true \
+	   go run ./cmd/catalog-service
+
