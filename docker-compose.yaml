@@ -118,6 +118,16 @@ services:
       - "4317:4317"
       - "4318:4318"
     restart: unless-stopped
+    depends_on:
+      - jaeger
+    
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    container_name: bfstore-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
 
 networks:
   bfstore:
