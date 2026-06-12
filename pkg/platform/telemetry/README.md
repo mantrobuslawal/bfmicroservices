@@ -20,7 +20,7 @@ It should stay small and boring. Service code should use this package to initial
 pkg/platform/telemetry
 ```
 
-Suggested package structure:
+Package structure:
 
 ```text
 pkg/platform/telemetry/
@@ -67,7 +67,7 @@ metrics
 
 This package focuses on OpenTelemetry traces and metrics.
 
-Logs remain handled by `log/slog` for now. The OpenTelemetry Go logs signal is still experimental, so bfstore should keep logging simple until the logs signal is more stable.
+Logs remain handled by `log/slog` for now.
 
 ## Key concepts
 
@@ -82,8 +82,6 @@ service.name=catalog-service
 service.version=<git-sha-or-build-version>
 deployment.environment.name=local
 ```
-
-Resource attributes help telemetry backends group data by service and environment.
 
 ### Tracer provider
 
@@ -119,7 +117,7 @@ How many database connections are open?
 
 An exporter sends telemetry data out of the process.
 
-This package uses OTLP over gRPC, which is the standard OpenTelemetry Protocol export path.
+This package uses OTLP over gRPC.
 
 A typical local flow is:
 
@@ -127,22 +125,12 @@ A typical local flow is:
 catalog-service
   -> OTLP gRPC exporter
   -> OpenTelemetry Collector
-  -> backend such as Jaeger, Tempo, Prometheus, or Grafana
+  -> Jaeger
 ```
 
 ### Propagator
 
 A propagator carries trace context across process boundaries.
-
-For example:
-
-```text
-api-gateway
-  -> catalog-service
-  -> inventory-service
-```
-
-The propagator allows those service calls to become part of the same distributed trace.
 
 This package configures:
 
@@ -153,29 +141,29 @@ Baggage
 
 ## Usage
 
-In a service startup path, create a config and call `Setup`.
-
-Example:
-
 ```go
 telemetryConfig := telemetry.DefaultConfig("catalog-service")
 telemetryConfig.Environment = cfg.Environment
+telemetryConfig.ServiceVersion = cfg.ServiceVersion
 telemetryConfig.OTLPEndpoint = cfg.OTLPEndpoint
 telemetryConfig.OTLPInsecure = cfg.OTLPInsecure
+telemetryConfig.TracesEnabled = cfg.TracesEnabled
+telemetryConfig.MetricsEnabled = cfg.MetricsEnabled
+telemetryConfig.MetricExportInterval = cfg.MetricExportInterval
 
 telemetryRuntime, err := telemetry.Setup(ctx, telemetryConfig)
 if err != nil {
-	logger.Error("failed to setup telemetry", "error", err)
-	os.Exit(1)
+    logger.Error("failed to setup telemetry", "error", err)
+    os.Exit(1)
 }
 
 defer func() {
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+    shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
 
-	if err := telemetryRuntime.Shutdown(shutdownCtx); err != nil {
-		logger.Error("failed to shutdown telemetry", "error", err)
-	}
+    if err := telemetryRuntime.Shutdown(shutdownCtx); err != nil {
+        logger.Error("failed to shutdown telemetry", "error", err)
+    }
 }()
 ```
 
@@ -183,14 +171,14 @@ defer func() {
 
 ```go
 type Config struct {
-	ServiceName          string
-	ServiceVersion       string
-	Environment          string
-	OTLPEndpoint         string
-	OTLPInsecure         bool
-	TracesEnabled        bool
-	MetricsEnabled       bool
-	MetricExportInterval time.Duration
+    ServiceName          string
+    ServiceVersion       string
+    Environment          string
+    OTLPEndpoint         string
+    OTLPInsecure         bool
+    TracesEnabled        bool
+    MetricsEnabled       bool
+    MetricExportInterval time.Duration
 }
 ```
 
@@ -219,7 +207,7 @@ The default endpoint assumes an OpenTelemetry Collector listening on:
 localhost:4317
 ```
 
-For Docker Compose, this will usually become something like:
+For Docker Compose, this will usually become:
 
 ```text
 otel-collector:4317
@@ -229,31 +217,24 @@ depending on whether the service runs on the host or inside the Compose network.
 
 ## Current scope
 
-This first telemetry package only initialises providers and exporters.
+This package initialises providers and exporters.
 
-It does not yet:
+The catalog service also uses gRPC server instrumentation with:
 
-- add gRPC server instrumentation;
+```go
+grpc.StatsHandler(otelgrpc.NewServerHandler())
+```
+
+That instrumentation belongs in the service gRPC server setup, not in the telemetry bootstrap package.
+
+The package does not yet:
+
 - add database instrumentation;
 - add Kafka instrumentation;
 - define custom business metrics;
-- configure an OpenTelemetry Collector;
 - emit OpenTelemetry logs.
 
 Those should be added in later slices.
-
-## Recommended next steps
-
-After this package is in place:
-
-```text
-1. Add telemetry config fields to catalog-service config.
-2. Call telemetry.Setup from catalog-service main.go.
-3. Add graceful telemetry shutdown.
-4. Add gRPC server instrumentation with otelgrpc.
-5. Add an OpenTelemetry Collector to docker-compose.
-6. Run a local trace smoke test.
-```
 
 ## Testing
 
@@ -272,3 +253,4 @@ This package initialises telemetry plumbing.
 Service code decides what work is worth instrumenting.
 ```
 
+Keep it boring where production matters.
