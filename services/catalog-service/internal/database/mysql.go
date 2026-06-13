@@ -18,6 +18,9 @@ const instrumentedMySQLDriverName = "bfstore-mysql-otel"
 // The returned *sql.DB is a connection pool, not a single connection.
 func Open(cfg config.DatabaseConfig) (*sql.DB, error) {
 	driverName, err := otelsql.Register(instrumentedMySQLDriverName)
+	if err != nil {
+		return nil, err
+	}
 
 	db, err := sql.Open(driverName, cfg.DSN())
 	if err != nil {
