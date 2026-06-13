@@ -9,35 +9,14 @@ The service is implemented in Go and uses:
 - gRPC for service APIs;
 - Protobuf-generated contracts from the root `proto` directory;
 - MySQL for catalog persistence;
+- `database/sql` for database access;
+- `otelsql` for database instrumentation;
 - shared platform gRPC interceptors;
 - standard gRPC health checks;
 - structured logging with `log/slog`;
 - OpenTelemetry tracing and metrics bootstrap;
 - Jaeger trace visualisation through the local OpenTelemetry Collector;
 - graceful shutdown for local and container runtime behaviour.
-
-## Responsibilities
-
-The catalog service is responsible for:
-
-- serving product catalog read APIs;
-- retrieving product and category data from MySQL;
-- mapping catalog domain models to Protobuf responses;
-- exposing standard gRPC health status;
-- participating in shared platform runtime behaviour such as logging, recovery, correlation ID propagation, and telemetry.
-
-The catalog service is not responsible for:
-
-- basket management;
-- inventory reservation;
-- order orchestration;
-- payment processing;
-- shipping;
-- notification delivery;
-- search indexing;
-- recommendation logic.
-
-Those responsibilities belong to separate bfstore services.
 
 ## Runtime architecture
 
@@ -47,7 +26,7 @@ At runtime, the catalog service starts like this:
 load configuration
 -> create logger
 -> initialise telemetry when enabled
--> open MySQL connection
+-> open instrumented MySQL connection pool
 -> run catalog readiness check
 -> create catalog repository
 -> create catalog service
@@ -68,139 +47,128 @@ receive SIGINT or SIGTERM
 -> stop accepting new gRPC traffic
 -> allow in-flight requests to finish
 -> force stop if graceful shutdown times out
--> close database connection
+-> close database connection pool
 -> flush and shutdown telemetry providers
 ```
 
-## gRPC server behaviour
+## Request path
 
-The catalog service uses shared platform interceptors from:
+A typical catalog request flows through the service like this:
 
 ```text
-pkg/platform/grpc/interceptors
+grpc client
+  -> catalog gRPC server
+  -> otelgrpc server instrumentation
+  -> recovery interceptor
+  -> correlation ID interceptor
+  -> logging interceptor
+  -> catalog gRPC handler
+  -> catalog application service
+  -> catalog repository
+  -> instrumented database/sql driver
+  -> MySQL
 ```
 
-Recommended chain:
+When telemetry is enabled, Jaeger should show a trace shaped roughly like:
+
+```text
+/bfstore.catalog.v1.CatalogService/ListProducts
+  -> database/sql span
+  -> database/sql span
+```
+
+The exact database span names may vary depending on the SQL operation and the instrumentation library behaviour.
+
+## Database instrumentation
+
+The catalog service instruments MySQL at the database connection boundary:
+
+```text
+services/catalog-service/internal/database/mysql.go
+```
+
+This is deliberate.
+
+Instrumentation belongs at the connection boundary first, not scattered through every repository method.
+
+The service uses:
+
+```text
+github.com/XSAM/otelsql
+```
+
+to wrap Go's standard `database/sql` MySQL driver.
+
+The resulting flow is:
+
+```text
+catalog repository
+  -> *sql.DB
+  -> otelsql instrumented driver wrapper
+  -> go-sql-driver/mysql
+  -> MySQL
+```
+
+## Driver registration
+
+The instrumented SQL driver should be registered once per process.
+
+The recommended pattern is:
 
 ```go
-grpc.NewServer(
-    grpc.StatsHandler(otelgrpc.NewServerHandler()),
-    grpc.ChainUnaryInterceptor(
-        platforminterceptors.UnaryRecoveryInterceptor(logger),
-        platforminterceptors.UnaryCorrelationIDInterceptor(),
-        platforminterceptors.UnaryLoggingInterceptor(logger),
-    ),
+var (
+    registerInstrumentedDriverOnce sync.Once
+    registerInstrumentedDriverName string
+    registerInstrumentedDriverErr  error
 )
 ```
 
-The order matters:
+Then:
+
+```go
+func instrumentedMySQLDriver() (string, error) {
+    registerInstrumentedDriverOnce.Do(func() {
+        registerInstrumentedDriverName, registerInstrumentedDriverErr = otelsql.Register(baseMySQLDriverName)
+    })
+
+    if registerInstrumentedDriverErr != nil {
+        return "", registerInstrumentedDriverErr
+    }
+
+    return registerInstrumentedDriverName, nil
+}
+```
+
+This avoids duplicate SQL driver registration if `Open` is called more than once in a process.
+
+## Context propagation requirement
+
+Database spans attach correctly to request traces when repository methods use context-aware database calls:
+
+```go
+db.QueryContext(ctx, query, args...)
+db.QueryRowContext(ctx, query, args...)
+db.ExecContext(ctx, query, args...)
+```
+
+Avoid non-context calls in request paths:
+
+```go
+db.Query(query, args...)
+db.QueryRow(query, args...)
+db.Exec(query, args...)
+```
+
+The `ctx` from the gRPC request should flow through:
 
 ```text
-OpenTelemetry gRPC stats handler
--> Recovery
--> Correlation ID
--> Logging
--> Handler
+gRPC handler
+  -> catalog service method
+  -> repository method
+  -> QueryContext / QueryRowContext / ExecContext
 ```
 
-### OpenTelemetry gRPC instrumentation
-
-The service uses `otelgrpc.NewServerHandler()` through `grpc.StatsHandler`.
-
-This adds automatic gRPC telemetry for incoming requests so they can appear as spans in a tracing backend such as Jaeger.
-
-The application still exports telemetry to the OpenTelemetry Collector rather than directly to Jaeger.
-
-```text
-catalog-service
-  -> OpenTelemetry SDK
-  -> OpenTelemetry Collector
-  -> Jaeger
-```
-
-### Recovery interceptor
-
-The recovery interceptor catches panics from later interceptors and handlers.
-
-It:
-
-- prevents one bad request from crashing the whole process;
-- logs panic details server-side;
-- returns a safe `codes.Internal` response to the client;
-- avoids exposing stack traces or implementation details to callers.
-
-### Correlation ID interceptor
-
-The correlation ID interceptor ensures every request has a correlation ID.
-
-It:
-
-- reads `x-correlation-id` from incoming gRPC metadata;
-- reuses the incoming value when present;
-- generates a new correlation ID when missing;
-- stores the correlation ID in request context;
-- returns the correlation ID in response metadata.
-
-Metadata key:
-
-```text
-x-correlation-id
-```
-
-### Logging interceptor
-
-The logging interceptor writes structured logs for each unary gRPC request.
-
-Current fields include:
-
-```text
-grpc.method
-grpc.code
-duration_ms
-correlation_id
-error
-```
-
-Example successful request log fields:
-
-```text
-grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts
-grpc.code=OK
-duration_ms=12
-correlation_id=local-dev-123
-```
-
-## Health checks
-
-The catalog service exposes the standard gRPC health API:
-
-```text
-grpc.health.v1.Health
-```
-
-Health status is managed by the shared platform health manager:
-
-```text
-pkg/platform/healthcheck
-```
-
-The catalog service owns its own readiness truth through:
-
-```text
-services/catalog-service/internal/health
-```
-
-## gRPC reflection
-
-gRPC reflection can be enabled for local development and testing.
-
-Enable reflection with:
-
-```bash
-GRPC_REFLECTION_ENABLED=true go run ./cmd/catalog-service
-```
-
-Reflection should be used for local development and testing. It should not be enabled by default in production.
+That is what makes the DB spans appear underneath the gRPC request span in Jaeger.
 
 ## Telemetry
 
@@ -233,27 +201,9 @@ catalog-service
   -> jaeger
 ```
 
-## Running locally
+## Smoke testing database spans
 
-From the repository root, start dependencies:
-
-```bash
-make up
-```
-
-Start observability services if needed:
-
-```bash
-make observability-up
-```
-
-Then start the catalog service:
-
-```bash
-make catalog-run
-```
-
-Run with telemetry enabled:
+Run the catalog service with telemetry enabled:
 
 ```bash
 cd services/catalog-service
@@ -265,103 +215,17 @@ GRPC_REFLECTION_ENABLED=true \
 go run ./cmd/catalog-service
 ```
 
-## Running tests
-
-```bash
-make catalog-test
-make catalog-integration-test
-make test
-go test ./pkg/platform/grpc/interceptors -v
-go test ./pkg/platform/healthcheck -v
-go test ./pkg/platform/telemetry -v
-```
-
-## Smoke testing with grpcurl
-
-List available gRPC services:
-
-```bash
-make catalog-grpc-list
-```
-
-Or directly:
-
-```bash
-grpcurl -plaintext localhost:50051 list
-```
-
-Expected services include:
-
-```text
-bfstore.catalog.v1.CatalogService
-grpc.health.v1.Health
-grpc.reflection.v1.ServerReflection
-```
-
-## Health check smoke test
-
-```bash
-make catalog-health
-```
-
-Or directly:
-
-```bash
-grpcurl -plaintext \
-  -d '{}' \
-  localhost:50051 \
-  grpc.health.v1.Health/Check
-```
-
-Expected response:
-
-```json
-{
-  "status": "SERVING"
-}
-```
-
-## Catalog API smoke tests
-
-List products:
-
-```bash
-grpcurl -plaintext \
-  -d '{"page":{"page_size":5}}' \
-  localhost:50051 \
-  bfstore.catalog.v1.CatalogService/ListProducts
-```
-
-List categories:
-
-```bash
-grpcurl -plaintext \
-  -d '{"page":{"page_size":5}}' \
-  localhost:50051 \
-  bfstore.catalog.v1.CatalogService/ListCategories
-```
-
 Send a request with an explicit correlation ID:
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-jaeger-123' \
+  -H 'x-correlation-id: local-dev-db-otel-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
 ```
 
-Expected behaviour:
-
-```text
-request succeeds or fails normally
-logs include correlation_id=local-dev-jaeger-123
-Jaeger shows a catalog-service trace when telemetry is enabled
-```
-
-## Jaeger
-
-When observability is running, open:
+Open Jaeger:
 
 ```text
 http://localhost:16686
@@ -373,58 +237,43 @@ Search for:
 catalog-service
 ```
 
+Expected result:
+
+```text
+a catalog gRPC request span
+one or more database/sql child spans
+```
+
 ## Troubleshooting
 
-### Jaeger does not show traces
+### Jaeger shows gRPC spans but no DB spans
 
-Check:
+Check that repository methods use context-aware SQL calls:
 
-```bash
-docker compose logs -f otel-collector
-docker compose logs -f jaeger
+```go
+QueryContext
+QueryRowContext
+ExecContext
 ```
 
-Confirm the catalog service was started with:
+Also confirm telemetry was enabled before the request was sent.
 
-```bash
-TELEMETRY_ENABLED=true
-OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
-OTEL_EXPORTER_OTLP_INSECURE=true
+### DB spans appear as separate traces
+
+This usually means request context is not flowing into the repository.
+
+Check the call chain:
+
+```text
+handler ctx
+-> service ctx
+-> repository ctx
+-> QueryContext(ctx, ...)
 ```
 
-Then send a fresh `grpcurl` request.
+### SQL driver registration fails
 
-### Collector config says protocol expected map or struct
-
-Correct:
-
-```yaml
-grpc:
-  endpoint: 0.0.0.0:4317
-http:
-  endpoint: 0.0.0.0:4318
-```
-
-Incorrect:
-
-```yaml
-grpc: 0.0.0.0:4317
-http: 0.0.0.0:4318
-```
-
-Also make sure there is a space after `endpoint:`.
-
-Correct:
-
-```yaml
-endpoint: 0.0.0.0:4317
-```
-
-Incorrect:
-
-```yaml
-endpoint:0.0.0.0:4317
-```
+If you see a duplicate registration error, ensure the instrumented driver is registered with `sync.Once`.
 
 ## Current runtime foundation
 
@@ -441,6 +290,7 @@ graceful shutdown
 database readiness checks
 OpenTelemetry bootstrap
 gRPC server tracing instrumentation
+database/sql instrumentation through otelsql
 OpenTelemetry Collector integration
 Jaeger trace visualisation
 Makefile-driven local smoke tests
@@ -451,7 +301,7 @@ Makefile-driven local smoke tests
 ```text
 Platform packages provide reusable plumbing.
 Service packages own service-specific truth.
+Instrumentation belongs at stable boundaries first.
 ```
 
 Keep it boring where production matters.
-
