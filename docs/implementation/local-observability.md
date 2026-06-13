@@ -8,12 +8,13 @@ The current local flow is:
 catalog-service
   -> OpenTelemetry SDK
   -> otelgrpc gRPC server instrumentation
+  -> otelsql database/sql instrumentation
   -> OTLP exporter
   -> OpenTelemetry Collector
   -> Jaeger
 ```
 
-The goal is to prove that a local gRPC request to `catalog-service` produces a trace that can be inspected in Jaeger.
+The goal is to prove that a local gRPC request to `catalog-service` produces a trace that can be inspected in Jaeger, including database spans for catalog repository work.
 
 ## Components
 
@@ -25,6 +26,7 @@ It uses:
 
 - `pkg/platform/telemetry` for OpenTelemetry bootstrap;
 - `otelgrpc.NewServerHandler()` for gRPC request instrumentation;
+- `otelsql` for database/sql instrumentation;
 - platform interceptors for recovery, correlation ID propagation, and structured request logging.
 
 ### OpenTelemetry Collector
@@ -103,56 +105,6 @@ Recommended path:
 deployments/local/otel-collector/config.yaml
 ```
 
-## Docker Compose services
-
-```yaml
-otel-collector:
-  image: otel/opentelemetry-collector-contrib:latest
-  container_name: bfstore-otel-collector
-  command: ["--config=/etc/otelcol-contrib/config.yaml"]
-  volumes:
-    - ./deployments/local/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
-  ports:
-    - "4317:4317"
-    - "4318:4318"
-  depends_on:
-    - jaeger
-  networks:
-    - bfstore-local
-
-jaeger:
-  image: jaegertracing/all-in-one:latest
-  container_name: bfstore-jaeger
-  environment:
-    COLLECTOR_OTLP_ENABLED: "true"
-  ports:
-    - "16686:16686"
-  networks:
-    - bfstore-local
-```
-
-For repeatable builds, prefer pinned image versions later instead of `latest`.
-
-## Running the stack
-
-Start observability services:
-
-```bash
-docker compose up -d otel-collector jaeger
-```
-
-Or with Make targets if available:
-
-```bash
-make observability-up
-```
-
-Watch Collector logs:
-
-```bash
-docker compose logs -f otel-collector
-```
-
 ## Running catalog-service with telemetry
 
 If running the service from the host with `go run`:
@@ -175,9 +127,11 @@ otel-collector:4317
 
 ## Sending a trace-producing request
 
+Send a catalog request with an explicit correlation ID:
+
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-jaeger-123' \
+  -H 'x-correlation-id: local-dev-db-otel-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
@@ -187,37 +141,25 @@ Expected behaviour:
 
 ```text
 request succeeds or fails normally
-catalog-service logs include correlation_id=local-dev-jaeger-123
+catalog-service logs include correlation_id=local-dev-db-otel-123
 Collector logs show received telemetry
 Jaeger shows a trace for catalog-service
+Jaeger trace includes database spans underneath the gRPC span
 ```
 
-## Viewing traces in Jaeger
+## Expected trace shape
 
-Open:
+For `ListProducts`, the trace should look roughly like:
 
 ```text
-http://localhost:16686
+/bfstore.catalog.v1.CatalogService/ListProducts
+  -> database/sql span
+  -> database/sql span
 ```
 
-Select service:
+The exact span names may vary.
 
-```text
-catalog-service
-```
-
-Click **Find Traces**.
-
-Useful things to inspect:
-
-```text
-operation name
-duration
-service name
-span attributes
-error status if a request failed
-timeline
-```
+The important result is that database work appears underneath the request that caused it.
 
 ## Suggested Make targets
 
@@ -242,7 +184,7 @@ catalog-run-telemetry:
 .PHONY: catalog-list-products-with-correlation
 catalog-list-products-with-correlation:
 	grpcurl -plaintext \
-		-H 'x-correlation-id: local-dev-jaeger-123' \
+		-H 'x-correlation-id: local-dev-db-otel-123' \
 		-d '{"page":{"page_size":5}}' \
 		localhost:50051 \
 		bfstore.catalog.v1.CatalogService/ListProducts
@@ -251,37 +193,6 @@ catalog-list-products-with-correlation:
 Remember: Makefile recipe lines must use tabs, not spaces.
 
 ## Troubleshooting
-
-### Collector says `protocols.grpc expected a map or struct got string`
-
-Correct:
-
-```yaml
-grpc:
-  endpoint: 0.0.0.0:4317
-```
-
-Incorrect:
-
-```yaml
-grpc: 0.0.0.0:4317
-```
-
-### Collector still fails after adding `endpoint`
-
-Check spacing after the colon.
-
-Correct:
-
-```yaml
-endpoint: 0.0.0.0:4317
-```
-
-Incorrect:
-
-```yaml
-endpoint:0.0.0.0:4317
-```
 
 ### Jaeger has no traces
 
@@ -303,46 +214,28 @@ docker compose logs -f otel-collector
 docker compose logs -f jaeger
 ```
 
-### Collector receives telemetry but Jaeger is empty
+### Jaeger shows gRPC traces but no database spans
 
-Check that the Collector trace pipeline includes the Jaeger exporter:
-
-```yaml
-service:
-  pipelines:
-    traces:
-      exporters: [debug, otlp/jaeger]
-```
-
-Also check:
-
-```yaml
-otlp/jaeger:
-  endpoint: jaeger:4317
-  tls:
-    insecure: true
-```
-
-## Design notes
-
-The application should export telemetry to the Collector, not directly to Jaeger.
-
-Preferred:
+Check that:
 
 ```text
-catalog-service
-  -> OpenTelemetry Collector
-  -> Jaeger
+catalog-service was restarted after database instrumentation was added
+repository methods use QueryContext / QueryRowContext / ExecContext
+ctx is passed from handler to service to repository
 ```
 
-Avoid:
+### Database spans appear as separate traces
+
+This usually means the request context is not flowing into the database call.
+
+Check the call chain:
 
 ```text
-catalog-service
-  -> Jaeger directly
+handler ctx
+-> service ctx
+-> repository ctx
+-> QueryContext(ctx, ...)
 ```
-
-The Collector gives the platform one routing point for telemetry and lets the backend change later without changing service code.
 
 ## Current milestone
 
@@ -351,9 +244,11 @@ This local observability setup proves:
 ```text
 catalog-service emits OpenTelemetry data
 otelgrpc creates gRPC request spans
+otelsql creates database spans
+context flows from gRPC handler to repository
 Collector receives OTLP telemetry
 Collector exports traces to Jaeger
-Jaeger displays service traces locally
+Jaeger displays request traces with database child spans
 ```
 
 Keep it boring where production matters.
