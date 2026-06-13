@@ -2,7 +2,7 @@
 
 This document explains how to run and verify the local bfstore observability stack.
 
-Current local flow:
+## Current flow
 
 ```text
 catalog-service
@@ -14,189 +14,47 @@ catalog-service
   -> OpenTelemetry Collector
   -> Jaeger for traces
   -> Prometheus for metrics
+  -> Grafana for dashboards
 ```
 
-## Current milestone
-
-The local observability setup currently proves:
+## Local UIs
 
 ```text
-catalog-service emits OpenTelemetry data
-otelgrpc creates gRPC request spans
-otelsql creates database spans
-dbmetrics emits database connection pool metrics
-Collector receives OTLP telemetry
-Collector exports traces to Jaeger
-Collector exposes metrics for Prometheus
-Prometheus scrapes metrics from the Collector
-Jaeger displays request traces with database child spans
-Prometheus queries database pool metrics
+Jaeger:     http://localhost:16686
+Prometheus: http://localhost:9090
+Grafana:    http://localhost:3000
 ```
 
-## Components
-
-### catalog-service
-
-The catalog service emits telemetry when enabled.
-
-It uses:
-
-- `pkg/platform/telemetry` for OpenTelemetry bootstrap;
-- `otelgrpc.NewServerHandler()` for gRPC request instrumentation;
-- `otelsql` for database/sql tracing;
-- `pkg/platform/dbmetrics` for database connection pool metrics;
-- platform interceptors for recovery, correlation ID propagation, and structured request logging.
-
-### OpenTelemetry Collector
-
-The Collector receives telemetry from services and routes it to one or more backends.
-
-Local endpoints:
+Grafana credentials:
 
 ```text
-OTLP gRPC: 4317
-OTLP HTTP: 4318
-Prometheus exporter: 9464
+username: admin
+password: admin
 ```
 
-Current Collector routing:
-
-```text
-traces -> Jaeger and debug logs
-metrics -> debug logs and Prometheus scrape endpoint
-```
-
-### Jaeger
-
-Jaeger provides a local trace UI:
-
-```text
-http://localhost:16686
-```
-
-Search for:
-
-```text
-catalog-service
-```
-
-### Prometheus
-
-Prometheus provides local metrics storage and querying:
-
-```text
-http://localhost:9090
-```
-
-Target health:
-
-```text
-http://localhost:9090/targets
-```
-
-Expected target:
-
-```text
-otel-collector
-```
-
-Expected state:
-
-```text
-UP
-```
-
-## Collector config
-
-Recommended path:
+## Key config files
 
 ```text
 deployments/local/otel-collector/config.yaml
-```
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      grpc:
-        endpoint: 0.0.0.0:4317
-      http:
-        endpoint: 0.0.0.0:4318
-
-processors:
-  batch:
-
-exporters:
-  debug:
-    verbosity: detailed
-
-  otlp/jaeger:
-    endpoint: jaeger:4317
-    tls:
-      insecure: true
-
-  prometheus:
-    endpoint: 0.0.0.0:9464
-
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug, otlp/jaeger]
-
-    metrics:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [debug, prometheus]
-```
-
-## Prometheus config
-
-Recommended path:
-
-```text
 deployments/local/prometheus/prometheus.yml
+deployments/local/grafana/provisioning/datasources/prometheus.yml
+deployments/local/grafana/provisioning/dashboards/dashboards.yml
+deployments/local/grafana/dashboards/catalog-db-pool-overview.json
 ```
 
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-scrape_configs:
-  - job_name: otel-collector
-    static_configs:
-      - targets: ["otel-collector:9464"]
-```
-
-## Running observability locally
+## Start the stack
 
 ```bash
-make observability-up
+docker compose up -d otel-collector jaeger prometheus grafana
 ```
 
 Or:
 
 ```bash
-docker compose up -d otel-collector jaeger prometheus
+make observability-up
 ```
 
-Check status:
-
-```bash
-docker compose ps
-```
-
-Watch logs:
-
-```bash
-docker compose logs -f otel-collector jaeger prometheus
-```
-
-## Running catalog-service with telemetry
-
-From the host:
+## Run catalog-service with telemetry
 
 ```bash
 cd services/catalog-service
@@ -208,33 +66,17 @@ GRPC_REFLECTION_ENABLED=true \
 go run ./cmd/catalog-service
 ```
 
-If running inside Docker Compose, use:
-
-```text
-otel-collector:4317
-```
-
-## Sending a request
+## Send a request
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-prometheus-123' \
+  -H 'x-correlation-id: local-dev-grafana-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
 ```
 
-Expected behaviour:
-
-```text
-request succeeds or fails normally
-catalog-service logs include correlation_id=local-dev-prometheus-123
-Jaeger shows a trace for catalog-service
-Jaeger trace includes database spans under the gRPC span
-Prometheus can query database pool metrics
-```
-
-## Viewing traces in Jaeger
+## Verify Jaeger
 
 Open:
 
@@ -247,10 +89,9 @@ Expected trace shape:
 ```text
 /bfstore.catalog.v1.CatalogService/ListProducts
   -> database/sql span
-  -> database/sql span
 ```
 
-## Viewing metrics in Prometheus
+## Verify Prometheus
 
 Open:
 
@@ -258,38 +99,30 @@ Open:
 http://localhost:9090
 ```
 
-Prometheus normalises metric names from dots to underscores.
-
-Try:
+Useful query:
 
 ```promql
 db_client_connections_open
 ```
 
-```promql
-db_client_connections_in_use
+## Verify Grafana
+
+Open:
+
+```text
+http://localhost:3000
 ```
 
-```promql
-db_client_connections_idle
+Expected folder:
+
+```text
+bfstore
 ```
 
-```promql
-db_client_connections_wait_count
-```
+Expected dashboard:
 
-```promql
-db_client_connections_wait_duration
-```
-
-Useful rate queries:
-
-```promql
-rate(db_client_connections_wait_count[5m])
-```
-
-```promql
-rate(db_client_connections_wait_duration[5m])
+```text
+Catalog DB Pool Overview
 ```
 
 ## Suggested Make targets
@@ -297,88 +130,59 @@ rate(db_client_connections_wait_duration[5m])
 ```makefile
 .PHONY: observability-up
 observability-up:
-	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger prometheus
+	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger prometheus grafana
 
 .PHONY: observability-logs
 observability-logs:
-	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus grafana
 
-.PHONY: metrics-up
-metrics-up:
-	docker compose -f $(COMPOSE_FILE) up -d otel-collector prometheus
+.PHONY: grafana-up
+grafana-up:
+	docker compose -f $(COMPOSE_FILE) up -d grafana
 
-.PHONY: metrics-logs
-metrics-logs:
-	docker compose -f $(COMPOSE_FILE) logs -f otel-collector prometheus
-
-.PHONY: catalog-run-telemetry
-catalog-run-telemetry:
-	cd services/catalog-service && \
-		TELEMETRY_ENABLED=true \
-		OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 \
-		OTEL_EXPORTER_OTLP_INSECURE=true \
-		GRPC_REFLECTION_ENABLED=true \
-		go run ./cmd/catalog-service
+.PHONY: grafana-logs
+grafana-logs:
+	docker compose -f $(COMPOSE_FILE) logs -f grafana
 ```
-
-Remember: Makefile recipe lines must use tabs.
 
 ## Troubleshooting
 
-### Prometheus target is down
+### Grafana dashboard does not appear
 
-Open:
-
-```text
-http://localhost:9090/targets
-```
-
-Check target:
-
-```text
-otel-collector:9464
-```
-
-Check logs:
+Check:
 
 ```bash
-docker compose logs -f prometheus
-docker compose logs -f otel-collector
+docker compose logs -f grafana
 ```
 
-### Prometheus target is up but metrics are missing
+Then restart:
 
-Check:
-
-```text
-catalog-service is running
-TELEMETRY_ENABLED=true
-MetricsEnabled is true
-dbmetrics.Register is called
-a fresh catalog request has been sent
+```bash
+docker compose restart grafana
 ```
 
-### Jaeger has no traces
+### Grafana panels show no data
 
-Check:
+Check Prometheus first:
 
-```text
-otel-collector is running
-jaeger is running
-catalog-service started with TELEMETRY_ENABLED=true
-OTEL_EXPORTER_OTLP_ENDPOINT is correct for host vs container
+```promql
+db_client_connections_open
 ```
+
+If Prometheus has no data, Grafana will have no data.
 
 ## Next step
 
-The next observability step is Grafana:
+The next useful slice is either:
 
 ```text
-catalog-service
-  -> OpenTelemetry Collector
-  -> Jaeger for traces
-  -> Prometheus for metrics
-  -> Grafana for dashboards
+add a small load test to make metrics visibly move
+```
+
+or:
+
+```text
+add service-level request metrics
 ```
 
 Keep it boring where production matters.
