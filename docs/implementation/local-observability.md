@@ -9,12 +9,27 @@ catalog-service
   -> OpenTelemetry SDK
   -> otelgrpc gRPC server instrumentation
   -> otelsql database/sql instrumentation
+  -> dbmetrics database pool metrics
   -> OTLP exporter
   -> OpenTelemetry Collector
-  -> Jaeger
+  -> Jaeger for traces
+  -> Collector debug logs for metrics
 ```
 
-The goal is to prove that a local gRPC request to `catalog-service` produces a trace that can be inspected in Jaeger, including database spans for catalog repository work.
+## Current milestone
+
+The local observability setup currently proves:
+
+```text
+catalog-service emits OpenTelemetry data
+otelgrpc creates gRPC request spans
+otelsql creates database spans
+dbmetrics emits database connection pool metrics
+Collector receives OTLP telemetry
+Collector exports traces to Jaeger
+Collector debug logs show metrics
+Jaeger displays request traces with database child spans
+```
 
 ## Components
 
@@ -26,7 +41,8 @@ It uses:
 
 - `pkg/platform/telemetry` for OpenTelemetry bootstrap;
 - `otelgrpc.NewServerHandler()` for gRPC request instrumentation;
-- `otelsql` for database/sql instrumentation;
+- `otelsql` for database/sql tracing;
+- `pkg/platform/dbmetrics` for database connection pool metrics;
 - platform interceptors for recovery, correlation ID propagation, and structured request logging.
 
 ### OpenTelemetry Collector
@@ -43,6 +59,13 @@ It also exposes OTLP HTTP on:
 
 ```text
 localhost:4318
+```
+
+The current Collector config exports:
+
+```text
+traces -> Jaeger and debug logs
+metrics -> debug logs
 ```
 
 ### Jaeger
@@ -125,13 +148,13 @@ If running the service inside Docker Compose, the endpoint should normally be:
 otel-collector:4317
 ```
 
-## Sending a trace-producing request
+## Sending a trace-producing and metric-producing request
 
 Send a catalog request with an explicit correlation ID:
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-db-otel-123' \
+  -H 'x-correlation-id: local-dev-dbmetrics-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
@@ -141,15 +164,30 @@ Expected behaviour:
 
 ```text
 request succeeds or fails normally
-catalog-service logs include correlation_id=local-dev-db-otel-123
+catalog-service logs include correlation_id=local-dev-dbmetrics-123
 Collector logs show received telemetry
 Jaeger shows a trace for catalog-service
 Jaeger trace includes database spans underneath the gRPC span
+Collector logs include database pool metrics
 ```
 
-## Expected trace shape
+## Viewing traces in Jaeger
 
-For `ListProducts`, the trace should look roughly like:
+Open:
+
+```text
+http://localhost:16686
+```
+
+Select service:
+
+```text
+catalog-service
+```
+
+Click **Find Traces**.
+
+Expected trace shape:
 
 ```text
 /bfstore.catalog.v1.CatalogService/ListProducts
@@ -159,7 +197,27 @@ For `ListProducts`, the trace should look roughly like:
 
 The exact span names may vary.
 
-The important result is that database work appears underneath the request that caused it.
+## Viewing metrics in Collector logs
+
+Watch Collector logs:
+
+```bash
+docker compose logs -f otel-collector
+```
+
+Look for metric names such as:
+
+```text
+db.client.connections.max
+db.client.connections.open
+db.client.connections.in_use
+db.client.connections.idle
+db.client.connections.wait_count
+db.client.connections.wait_duration
+db.client.connections.max_idle_closed
+db.client.connections.max_idle_time_closed
+db.client.connections.max_lifetime_closed
+```
 
 ## Suggested Make targets
 
@@ -184,7 +242,7 @@ catalog-run-telemetry:
 .PHONY: catalog-list-products-with-correlation
 catalog-list-products-with-correlation:
 	grpcurl -plaintext \
-		-H 'x-correlation-id: local-dev-db-otel-123' \
+		-H 'x-correlation-id: local-dev-dbmetrics-123' \
 		-d '{"page":{"page_size":5}}' \
 		localhost:50051 \
 		bfstore.catalog.v1.CatalogService/ListProducts
@@ -224,31 +282,36 @@ repository methods use QueryContext / QueryRowContext / ExecContext
 ctx is passed from handler to service to repository
 ```
 
-### Database spans appear as separate traces
+### Collector logs show traces but no DB metrics
 
-This usually means the request context is not flowing into the database call.
-
-Check the call chain:
+Check that:
 
 ```text
-handler ctx
--> service ctx
--> repository ctx
--> QueryContext(ctx, ...)
+MetricsEnabled is true
+pkg/platform/dbmetrics is wired in catalog-service startup
+dbmetrics.Register is called after database.Open
+Collector metrics pipeline includes the debug exporter
 ```
 
-## Current milestone
+### Metrics appear but values stay low
 
-This local observability setup proves:
+That may be normal in local development.
+
+Send repeated requests or run a small load test later to create more visible pool activity.
+
+## Next step
+
+The next observability backend is Prometheus.
+
+The future local flow should become:
 
 ```text
-catalog-service emits OpenTelemetry data
-otelgrpc creates gRPC request spans
-otelsql creates database spans
-context flows from gRPC handler to repository
-Collector receives OTLP telemetry
-Collector exports traces to Jaeger
-Jaeger displays request traces with database child spans
+catalog-service
+  -> OpenTelemetry Collector
+  -> Jaeger for traces
+  -> Prometheus for metrics
 ```
+
+After Prometheus, Grafana can be added for dashboards.
 
 Keep it boring where production matters.
