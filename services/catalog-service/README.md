@@ -16,7 +16,9 @@ The service is implemented in Go and uses:
 - standard gRPC health checks;
 - structured logging with `log/slog`;
 - OpenTelemetry tracing and metrics bootstrap;
-- Jaeger trace visualisation through the local OpenTelemetry Collector;
+- OpenTelemetry Collector for telemetry routing;
+- Jaeger for trace visualisation;
+- Prometheus for metrics querying;
 - graceful shutdown for local and container runtime behaviour.
 
 ## Runtime architecture
@@ -41,18 +43,6 @@ load configuration
 -> start serving requests
 ```
 
-During shutdown:
-
-```text
-receive SIGINT or SIGTERM
--> mark service NOT_SERVING
--> stop accepting new gRPC traffic
--> allow in-flight requests to finish
--> force stop if graceful shutdown times out
--> close database connection pool
--> flush and shutdown telemetry providers
-```
-
 ## Observability
 
 The catalog service currently emits:
@@ -71,14 +61,14 @@ Current telemetry flow:
 catalog-service
   -> OpenTelemetry Collector
   -> Jaeger for traces
-  -> Collector debug logs for metrics
+  -> Prometheus for metrics
 ```
 
 ## Database spans
 
 Database spans are created through `otelsql`.
 
-The instrumentation is configured in:
+Instrumentation location:
 
 ```text
 services/catalog-service/internal/database/mysql.go
@@ -108,8 +98,6 @@ Database connection pool metrics are registered through:
 pkg/platform/dbmetrics
 ```
 
-The catalog service wires these metrics after opening the database connection pool.
-
 Current metric names:
 
 ```text
@@ -124,10 +112,14 @@ db.client.connections.max_idle_time_closed
 db.client.connections.max_lifetime_closed
 ```
 
-These metrics are sourced from:
+In Prometheus, these commonly appear as:
 
-```go
-db.Stats()
+```text
+db_client_connections_open
+db_client_connections_in_use
+db_client_connections_idle
+db_client_connections_wait_count
+db_client_connections_wait_duration
 ```
 
 ## Running with telemetry
@@ -154,7 +146,7 @@ Send a request:
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-dbmetrics-123' \
+  -H 'x-correlation-id: local-dev-prometheus-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
@@ -176,45 +168,58 @@ catalog-service
 
 ## Viewing metrics
 
-Watch Collector logs:
-
-```bash
-docker compose logs -f otel-collector
-```
-
-Look for:
+Open Prometheus:
 
 ```text
-db.client.connections.open
-db.client.connections.in_use
-db.client.connections.idle
-db.client.connections.wait_count
-db.client.connections.wait_duration
+http://localhost:9090
+```
+
+Check target health:
+
+```text
+http://localhost:9090/targets
+```
+
+Expected target:
+
+```text
+otel-collector
+```
+
+Expected state:
+
+```text
+UP
+```
+
+Try PromQL queries:
+
+```promql
+db_client_connections_open
+```
+
+```promql
+db_client_connections_in_use
+```
+
+```promql
+db_client_connections_idle
+```
+
+```promql
+rate(db_client_connections_wait_count[5m])
+```
+
+```promql
+rate(db_client_connections_wait_duration[5m])
 ```
 
 ## Running tests
 
-Run catalog tests:
-
 ```bash
 make catalog-test
-```
-
-Run database package tests:
-
-```bash
 go test ./services/catalog-service/internal/database -v
-```
-
-Run DB metrics package tests:
-
-```bash
 go test ./pkg/platform/dbmetrics -v
-```
-
-Run all tests:
-
-```bash
 go test ./...
 ```
 
@@ -232,22 +237,31 @@ ExecContext
 
 Also confirm the service was restarted after database instrumentation was added.
 
-### Collector logs show no DB metrics
+### Prometheus target is down
 
-Check that:
+Check:
+
+```bash
+docker compose logs -f prometheus
+docker compose logs -f otel-collector
+```
+
+Confirm Prometheus scrapes:
+
+```text
+otel-collector:9464
+```
+
+### Prometheus target is up but no DB metrics appear
+
+Check:
 
 ```text
 TELEMETRY_ENABLED=true
 MetricsEnabled is true
 dbmetrics.Register is called after database.Open
-Collector metrics pipeline includes debug exporter
+a fresh catalog request has been sent
 ```
-
-### Metrics do not change much locally
-
-That may be normal with low local traffic.
-
-Send repeated requests or add a small load test later to create more visible activity.
 
 ## Current runtime foundation
 
@@ -268,7 +282,7 @@ database/sql tracing through otelsql
 database pool metrics through dbmetrics
 OpenTelemetry Collector integration
 Jaeger trace visualisation
-Collector debug metric verification
+Prometheus metric querying
 Makefile-driven local smoke tests
 ```
 
@@ -277,6 +291,7 @@ Makefile-driven local smoke tests
 ```text
 Traces explain request paths.
 Metrics explain resource health over time.
+Dashboards should come after queries work.
 ```
 
 Keep it boring where production matters.
