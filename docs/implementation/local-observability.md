@@ -2,7 +2,7 @@
 
 This document explains how to run and verify the local bfstore observability stack.
 
-The current local flow is:
+Current local flow:
 
 ```text
 catalog-service
@@ -13,7 +13,7 @@ catalog-service
   -> OTLP exporter
   -> OpenTelemetry Collector
   -> Jaeger for traces
-  -> Collector debug logs for metrics
+  -> Prometheus for metrics
 ```
 
 ## Current milestone
@@ -27,8 +27,10 @@ otelsql creates database spans
 dbmetrics emits database connection pool metrics
 Collector receives OTLP telemetry
 Collector exports traces to Jaeger
-Collector debug logs show metrics
+Collector exposes metrics for Prometheus
+Prometheus scrapes metrics from the Collector
 Jaeger displays request traces with database child spans
+Prometheus queries database pool metrics
 ```
 
 ## Components
@@ -49,30 +51,24 @@ It uses:
 
 The Collector receives telemetry from services and routes it to one or more backends.
 
-In local development, it receives OTLP gRPC traffic on:
+Local endpoints:
 
 ```text
-localhost:4317
+OTLP gRPC: 4317
+OTLP HTTP: 4318
+Prometheus exporter: 9464
 ```
 
-It also exposes OTLP HTTP on:
-
-```text
-localhost:4318
-```
-
-The current Collector config exports:
+Current Collector routing:
 
 ```text
 traces -> Jaeger and debug logs
-metrics -> debug logs
+metrics -> debug logs and Prometheus scrape endpoint
 ```
 
 ### Jaeger
 
-Jaeger provides a local trace UI.
-
-Open the UI at:
+Jaeger provides a local trace UI:
 
 ```text
 http://localhost:16686
@@ -84,9 +80,39 @@ Search for:
 catalog-service
 ```
 
+### Prometheus
+
+Prometheus provides local metrics storage and querying:
+
+```text
+http://localhost:9090
+```
+
+Target health:
+
+```text
+http://localhost:9090/targets
+```
+
+Expected target:
+
+```text
+otel-collector
+```
+
+Expected state:
+
+```text
+UP
+```
+
 ## Collector config
 
-Recommended local config:
+Recommended path:
+
+```text
+deployments/local/otel-collector/config.yaml
+```
 
 ```yaml
 receivers:
@@ -109,6 +135,9 @@ exporters:
     tls:
       insecure: true
 
+  prometheus:
+    endpoint: 0.0.0.0:9464
+
 service:
   pipelines:
     traces:
@@ -119,18 +148,55 @@ service:
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [debug, prometheus]
 ```
+
+## Prometheus config
 
 Recommended path:
 
 ```text
-deployments/local/otel-collector/config.yaml
+deployments/local/prometheus/prometheus.yml
+```
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:9464"]
+```
+
+## Running observability locally
+
+```bash
+make observability-up
+```
+
+Or:
+
+```bash
+docker compose up -d otel-collector jaeger prometheus
+```
+
+Check status:
+
+```bash
+docker compose ps
+```
+
+Watch logs:
+
+```bash
+docker compose logs -f otel-collector jaeger prometheus
 ```
 
 ## Running catalog-service with telemetry
 
-If running the service from the host with `go run`:
+From the host:
 
 ```bash
 cd services/catalog-service
@@ -142,19 +208,17 @@ GRPC_REFLECTION_ENABLED=true \
 go run ./cmd/catalog-service
 ```
 
-If running the service inside Docker Compose, the endpoint should normally be:
+If running inside Docker Compose, use:
 
 ```text
 otel-collector:4317
 ```
 
-## Sending a trace-producing and metric-producing request
-
-Send a catalog request with an explicit correlation ID:
+## Sending a request
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-dbmetrics-123' \
+  -H 'x-correlation-id: local-dev-prometheus-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
@@ -164,11 +228,10 @@ Expected behaviour:
 
 ```text
 request succeeds or fails normally
-catalog-service logs include correlation_id=local-dev-dbmetrics-123
-Collector logs show received telemetry
+catalog-service logs include correlation_id=local-dev-prometheus-123
 Jaeger shows a trace for catalog-service
-Jaeger trace includes database spans underneath the gRPC span
-Collector logs include database pool metrics
+Jaeger trace includes database spans under the gRPC span
+Prometheus can query database pool metrics
 ```
 
 ## Viewing traces in Jaeger
@@ -179,14 +242,6 @@ Open:
 http://localhost:16686
 ```
 
-Select service:
-
-```text
-catalog-service
-```
-
-Click **Find Traces**.
-
 Expected trace shape:
 
 ```text
@@ -195,28 +250,46 @@ Expected trace shape:
   -> database/sql span
 ```
 
-The exact span names may vary.
+## Viewing metrics in Prometheus
 
-## Viewing metrics in Collector logs
-
-Watch Collector logs:
-
-```bash
-docker compose logs -f otel-collector
-```
-
-Look for metric names such as:
+Open:
 
 ```text
-db.client.connections.max
-db.client.connections.open
-db.client.connections.in_use
-db.client.connections.idle
-db.client.connections.wait_count
-db.client.connections.wait_duration
-db.client.connections.max_idle_closed
-db.client.connections.max_idle_time_closed
-db.client.connections.max_lifetime_closed
+http://localhost:9090
+```
+
+Prometheus normalises metric names from dots to underscores.
+
+Try:
+
+```promql
+db_client_connections_open
+```
+
+```promql
+db_client_connections_in_use
+```
+
+```promql
+db_client_connections_idle
+```
+
+```promql
+db_client_connections_wait_count
+```
+
+```promql
+db_client_connections_wait_duration
+```
+
+Useful rate queries:
+
+```promql
+rate(db_client_connections_wait_count[5m])
+```
+
+```promql
+rate(db_client_connections_wait_duration[5m])
 ```
 
 ## Suggested Make targets
@@ -224,11 +297,19 @@ db.client.connections.max_lifetime_closed
 ```makefile
 .PHONY: observability-up
 observability-up:
-	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger
+	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger prometheus
 
 .PHONY: observability-logs
 observability-logs:
-	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus
+
+.PHONY: metrics-up
+metrics-up:
+	docker compose -f $(COMPOSE_FILE) up -d otel-collector prometheus
+
+.PHONY: metrics-logs
+metrics-logs:
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector prometheus
 
 .PHONY: catalog-run-telemetry
 catalog-run-telemetry:
@@ -238,80 +319,66 @@ catalog-run-telemetry:
 		OTEL_EXPORTER_OTLP_INSECURE=true \
 		GRPC_REFLECTION_ENABLED=true \
 		go run ./cmd/catalog-service
-
-.PHONY: catalog-list-products-with-correlation
-catalog-list-products-with-correlation:
-	grpcurl -plaintext \
-		-H 'x-correlation-id: local-dev-dbmetrics-123' \
-		-d '{"page":{"page_size":5}}' \
-		localhost:50051 \
-		bfstore.catalog.v1.CatalogService/ListProducts
 ```
 
-Remember: Makefile recipe lines must use tabs, not spaces.
+Remember: Makefile recipe lines must use tabs.
 
 ## Troubleshooting
 
+### Prometheus target is down
+
+Open:
+
+```text
+http://localhost:9090/targets
+```
+
+Check target:
+
+```text
+otel-collector:9464
+```
+
+Check logs:
+
+```bash
+docker compose logs -f prometheus
+docker compose logs -f otel-collector
+```
+
+### Prometheus target is up but metrics are missing
+
+Check:
+
+```text
+catalog-service is running
+TELEMETRY_ENABLED=true
+MetricsEnabled is true
+dbmetrics.Register is called
+a fresh catalog request has been sent
+```
+
 ### Jaeger has no traces
 
-Check that:
+Check:
 
 ```text
 otel-collector is running
 jaeger is running
 catalog-service started with TELEMETRY_ENABLED=true
 OTEL_EXPORTER_OTLP_ENDPOINT is correct for host vs container
-a fresh grpcurl request was sent after startup
 ```
-
-Useful commands:
-
-```bash
-docker compose ps
-docker compose logs -f otel-collector
-docker compose logs -f jaeger
-```
-
-### Jaeger shows gRPC traces but no database spans
-
-Check that:
-
-```text
-catalog-service was restarted after database instrumentation was added
-repository methods use QueryContext / QueryRowContext / ExecContext
-ctx is passed from handler to service to repository
-```
-
-### Collector logs show traces but no DB metrics
-
-Check that:
-
-```text
-MetricsEnabled is true
-pkg/platform/dbmetrics is wired in catalog-service startup
-dbmetrics.Register is called after database.Open
-Collector metrics pipeline includes the debug exporter
-```
-
-### Metrics appear but values stay low
-
-That may be normal in local development.
-
-Send repeated requests or run a small load test later to create more visible pool activity.
 
 ## Next step
 
-The next observability backend is Prometheus.
-
-The future local flow should become:
+The next observability step is Grafana:
 
 ```text
 catalog-service
   -> OpenTelemetry Collector
   -> Jaeger for traces
   -> Prometheus for metrics
+  -> Grafana for dashboards
 ```
-
-After Prometheus, Grafana can be added for dashboards.
 
 Keep it boring where production matters.
