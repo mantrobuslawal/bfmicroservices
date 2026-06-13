@@ -159,5 +159,11 @@ observability-up:
 observability-logs:
 	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus grafana
 
+.PHONY: catalog-load
+catalog-load: ## Load test catalog service
+	REQUESTS=100 SLEEP_SECONDS=0.05 ./scripts/local/catalog-load.sh 
+
+
+
 
 
