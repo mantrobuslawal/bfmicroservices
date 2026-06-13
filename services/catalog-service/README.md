@@ -2,71 +2,21 @@
 
 The `catalog-service` owns product catalog data for bfstore.
 
-It provides gRPC APIs for reading catalog information such as products, categories, product variants, images, and product attribute definitions.
+It provides gRPC APIs for reading catalog information such as products, categories, product variants, product images, and product attribute definitions.
 
 The service is implemented in Go and uses:
 
-* gRPC for service APIs;
-* Protobuf-generated contracts from the root `proto` directory;
-* MySQL for catalog persistence;
-* shared platform gRPC interceptors;
-* standard gRPC health checks;
-* structured logging with `log/slog`;
-* graceful shutdown for local and container runtime behaviour.
-
-## Responsibilities
-
-The catalog service is responsible for:
-
-* serving product catalog read APIs;
-* retrieving product and category data from MySQL;
-* mapping catalog domain models to Protobuf responses;
-* exposing standard gRPC health status;
-* participating in shared platform runtime behaviour such as logging, recovery, and correlation ID propagation.
-
-The catalog service is not responsible for:
-
-* basket management;
-* inventory reservation;
-* order orchestration;
-* payment processing;
-* shipping;
-* notification delivery;
-* search indexing;
-* recommendation logic.
-
-Those responsibilities belong to separate bfstore services.
-
-## Package layout
-
-```text
-services/catalog-service/
-├── cmd/
-│   └── catalog-service/
-│       └── main.go
-├── internal/
-│   ├── catalog/
-│   │   ├── model.go
-│   │   ├── repository.go
-│   │   └── service.go
-│   ├── config/
-│   │   └── config.go
-│   ├── database/
-│   │   └── mysql.go
-│   ├── grpcadapter/
-│   │   ├── catalog_handler.go
-│   │   ├── errors.go
-│   │   ├── mappers.go
-│   │   └── server.go
-│   └── health/
-│       ├── doc.go
-│       └── health.go
-├── test/
-│   └── integration/
-├── Dockerfile
-├── README.md
-└── go.mod
-```
+- gRPC for service APIs;
+- Protobuf-generated contracts from the root `proto` directory;
+- MySQL for catalog persistence;
+- `database/sql` for database access;
+- `otelsql` for database instrumentation;
+- shared platform gRPC interceptors;
+- standard gRPC health checks;
+- structured logging with `log/slog`;
+- OpenTelemetry tracing and metrics bootstrap;
+- Jaeger trace visualisation through the local OpenTelemetry Collector;
+- graceful shutdown for local and container runtime behaviour.
 
 ## Runtime architecture
 
@@ -75,12 +25,14 @@ At runtime, the catalog service starts like this:
 ```text
 load configuration
 -> create logger
--> open MySQL connection
+-> initialise telemetry when enabled
+-> open instrumented MySQL connection pool
 -> run catalog readiness check
 -> create catalog repository
 -> create catalog service
 -> create gRPC server
 -> register platform interceptors
+-> register OpenTelemetry gRPC instrumentation
 -> register catalog gRPC handler
 -> register gRPC health service
 -> optionally register gRPC reflection
@@ -95,562 +47,233 @@ receive SIGINT or SIGTERM
 -> stop accepting new gRPC traffic
 -> allow in-flight requests to finish
 -> force stop if graceful shutdown times out
--> close database connection
+-> close database connection pool
+-> flush and shutdown telemetry providers
 ```
 
-## gRPC server behaviour
+## Request path
 
-The catalog service uses shared platform interceptors from:
+A typical catalog request flows through the service like this:
 
 ```text
-pkg/platform/grpc/interceptors
+grpc client
+  -> catalog gRPC server
+  -> otelgrpc server instrumentation
+  -> recovery interceptor
+  -> correlation ID interceptor
+  -> logging interceptor
+  -> catalog gRPC handler
+  -> catalog application service
+  -> catalog repository
+  -> instrumented database/sql driver
+  -> MySQL
 ```
 
-Recommended chain:
+When telemetry is enabled, Jaeger should show a trace shaped roughly like:
+
+```text
+/bfstore.catalog.v1.CatalogService/ListProducts
+  -> database/sql span
+  -> database/sql span
+```
+
+The exact database span names may vary depending on the SQL operation and the instrumentation library behaviour.
+
+## Database instrumentation
+
+The catalog service instruments MySQL at the database connection boundary:
+
+```text
+services/catalog-service/internal/database/mysql.go
+```
+
+This is deliberate.
+
+Instrumentation belongs at the connection boundary first, not scattered through every repository method.
+
+The service uses:
+
+```text
+github.com/XSAM/otelsql
+```
+
+to wrap Go's standard `database/sql` MySQL driver.
+
+The resulting flow is:
+
+```text
+catalog repository
+  -> *sql.DB
+  -> otelsql instrumented driver wrapper
+  -> go-sql-driver/mysql
+  -> MySQL
+```
+
+## Driver registration
+
+The instrumented SQL driver should be registered once per process.
+
+The recommended pattern is:
 
 ```go
-grpc.NewServer(
-	grpc.ChainUnaryInterceptor(
-		platforminterceptors.UnaryRecoveryInterceptor(logger),
-		platforminterceptors.UnaryCorrelationIDInterceptor(),
-		platforminterceptors.UnaryLoggingInterceptor(logger),
-	),
+var (
+    registerInstrumentedDriverOnce sync.Once
+    registerInstrumentedDriverName string
+    registerInstrumentedDriverErr  error
 )
 ```
 
-The order matters:
+Then:
 
-```text
-Recovery
--> Correlation ID
--> Logging
--> Handler
+```go
+func instrumentedMySQLDriver() (string, error) {
+    registerInstrumentedDriverOnce.Do(func() {
+        registerInstrumentedDriverName, registerInstrumentedDriverErr = otelsql.Register(baseMySQLDriverName)
+    })
+
+    if registerInstrumentedDriverErr != nil {
+        return "", registerInstrumentedDriverErr
+    }
+
+    return registerInstrumentedDriverName, nil
+}
 ```
 
-### Recovery interceptor
+This avoids duplicate SQL driver registration if `Open` is called more than once in a process.
 
-The recovery interceptor catches panics from later interceptors and handlers.
+## Context propagation requirement
 
-It:
+Database spans attach correctly to request traces when repository methods use context-aware database calls:
 
-* prevents one bad request from crashing the whole process;
-* logs panic details server-side;
-* returns a safe `codes.Internal` response to the client;
-* avoids exposing stack traces or implementation details to callers.
-
-### Correlation ID interceptor
-
-The correlation ID interceptor ensures every request has a correlation ID.
-
-It:
-
-* reads `x-correlation-id` from incoming gRPC metadata;
-* reuses the incoming value when present;
-* generates a new correlation ID when missing;
-* stores the correlation ID in request context;
-* returns the correlation ID in response metadata.
-
-Metadata key:
-
-```text
-x-correlation-id
+```go
+db.QueryContext(ctx, query, args...)
+db.QueryRowContext(ctx, query, args...)
+db.ExecContext(ctx, query, args...)
 ```
 
-This helps connect logs across service boundaries.
+Avoid non-context calls in request paths:
 
-### Logging interceptor
-
-The logging interceptor writes structured logs for each unary gRPC request.
-
-Current fields include:
-
-```text
-grpc.method
-grpc.code
-duration_ms
-correlation_id
-error
+```go
+db.Query(query, args...)
+db.QueryRow(query, args...)
+db.Exec(query, args...)
 ```
 
-Example successful request log fields:
+The `ctx` from the gRPC request should flow through:
 
 ```text
-grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts
-grpc.code=OK
-duration_ms=12
-correlation_id=local-dev-123
+gRPC handler
+  -> catalog service method
+  -> repository method
+  -> QueryContext / QueryRowContext / ExecContext
 ```
 
-Example failed request log fields:
+That is what makes the DB spans appear underneath the gRPC request span in Jaeger.
 
-```text
-grpc.method=/bfstore.catalog.v1.CatalogService/ListProducts
-grpc.code=InvalidArgument
-duration_ms=4
-correlation_id=local-dev-123
-error="rpc error: code = InvalidArgument desc = invalid page size"
-```
+## Telemetry
 
-## Health checks
-
-The catalog service exposes the standard gRPC health API:
-
-```text
-grpc.health.v1.Health
-```
-
-Health status is managed by the shared platform health manager:
-
-```text
-pkg/platform/healthcheck
-```
-
-The platform health manager owns:
-
-```text
-gRPC health service registration
-whole-server health status
-service-specific health status
-SERVING / NOT_SERVING transitions
-shutdown health status
-```
-
-The catalog service owns its own readiness truth through:
-
-```text
-services/catalog-service/internal/health
-```
-
-The catalog health checker currently verifies whether the catalog database is reachable.
-
-Practical split:
-
-```text
-pkg/platform/healthcheck
-  shared health status plumbing
-
-services/catalog-service/internal/health
-  catalog-specific dependency checks
-```
-
-## gRPC reflection
-
-gRPC reflection can be enabled for local development and testing.
-
-Reflection allows tools such as `grpcurl` to discover services and methods without needing local `.proto` files.
-
-Enable reflection with:
+Telemetry can be enabled locally with:
 
 ```bash
-GRPC_REFLECTION_ENABLED=true go run ./cmd/catalog-service
+TELEMETRY_ENABLED=true
+OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+OTEL_EXPORTER_OTLP_INSECURE=true
 ```
 
-Reflection should be used for local development and testing. It should not be enabled by default in production.
+When running the service from the host with `go run`, use:
 
-## Running locally
-
-From the repository root, start dependencies:
-
-```bash
-make up
+```text
+localhost:4317
 ```
 
-Then start the catalog service:
+When running the service from inside Docker Compose, use:
 
-```bash
-make catalog-run
+```text
+otel-collector:4317
 ```
 
-Or run directly from the service directory:
+Useful local telemetry flow:
+
+```text
+catalog-service
+  -> OTLP gRPC localhost:4317
+  -> otel-collector
+  -> jaeger
+```
+
+## Smoke testing database spans
+
+Run the catalog service with telemetry enabled:
 
 ```bash
 cd services/catalog-service
-GRPC_REFLECTION_ENABLED=true go run ./cmd/catalog-service
+
+TELEMETRY_ENABLED=true \
+OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 \
+OTEL_EXPORTER_OTLP_INSECURE=true \
+GRPC_REFLECTION_ENABLED=true \
+go run ./cmd/catalog-service
 ```
-
-## Running tests
-
-Run catalog service tests:
-
-```bash
-make catalog-test
-```
-
-Run catalog integration tests:
-
-```bash
-make catalog-integration-test
-```
-
-Run all Go tests from the repository root:
-
-```bash
-make test
-```
-
-Run platform interceptor tests:
-
-```bash
-go test ./pkg/platform/grpc/interceptors -v
-```
-
-Run platform healthcheck tests:
-
-```bash
-go test ./pkg/platform/healthcheck -v
-```
-
-## Makefile targets
-
-Useful root Makefile targets:
-
-```bash
-make catalog-run
-make catalog-test
-make catalog-integration-test
-make catalog-build
-make catalog-docker-build
-make catalog-grpc-list
-make catalog-health
-make catalog-list-products
-make catalog-list-categories
-make catalog-list-products-with-correlation
-```
-
-Example target:
-
-```makefile
-.PHONY: catalog-list-products-with-correlation
-catalog-list-products-with-correlation:
-	grpcurl -plaintext \
-		-H 'x-correlation-id: local-dev-123' \
-		-d '{"page":{"page_size":5}}' \
-		localhost:50051 \
-		bfstore.catalog.v1.CatalogService/ListProducts
-```
-
-## Smoke testing with grpcurl
-
-List available gRPC services:
-
-```bash
-make catalog-grpc-list
-```
-
-Or directly:
-
-```bash
-grpcurl -plaintext localhost:50051 list
-```
-
-Expected services include:
-
-```text
-bfstore.catalog.v1.CatalogService
-grpc.health.v1.Health
-grpc.reflection.v1.ServerReflection
-```
-
-List catalog service methods:
-
-```bash
-grpcurl -plaintext \
-  localhost:50051 \
-  list bfstore.catalog.v1.CatalogService
-```
-
-## Health check smoke test
-
-Check overall service health:
-
-```bash
-make catalog-health
-```
-
-Or directly:
-
-```bash
-grpcurl -plaintext \
-  -d '{}' \
-  localhost:50051 \
-  grpc.health.v1.Health/Check
-```
-
-Expected response:
-
-```json
-{
-  "status": "SERVING"
-}
-```
-
-Check catalog-specific health:
-
-```bash
-grpcurl -plaintext \
-  -d '{"service":"bfstore.catalog.v1.CatalogService"}' \
-  localhost:50051 \
-  grpc.health.v1.Health/Check
-```
-
-Expected response:
-
-```json
-{
-  "status": "SERVING"
-}
-```
-
-## Catalog API smoke tests
-
-List products:
-
-```bash
-make catalog-list-products
-```
-
-Or directly:
-
-```bash
-grpcurl -plaintext \
-  -d '{"page":{"page_size":5}}' \
-  localhost:50051 \
-  bfstore.catalog.v1.CatalogService/ListProducts
-```
-
-List categories:
-
-```bash
-make catalog-list-categories
-```
-
-Or directly:
-
-```bash
-grpcurl -plaintext \
-  -d '{"page":{"page_size":5}}' \
-  localhost:50051 \
-  bfstore.catalog.v1.CatalogService/ListCategories
-```
-
-Get a product by ID:
-
-```bash
-grpcurl -plaintext \
-  -d '{"product_id":"prod_gopher_lamp"}' \
-  localhost:50051 \
-  bfstore.catalog.v1.CatalogService/GetProduct
-```
-
-Use a product ID that exists in the local seed data.
-
-## Correlation ID smoke test
 
 Send a request with an explicit correlation ID:
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-123' \
+  -H 'x-correlation-id: local-dev-db-otel-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
 ```
 
-Expected behaviour:
+Open Jaeger:
 
 ```text
-request succeeds or fails normally
-logs include correlation_id=local-dev-123
-logs include grpc.method
-logs include grpc.code
-logs include duration_ms
+http://localhost:16686
 ```
 
-Send a request without an explicit correlation ID:
-
-```bash
-grpcurl -plaintext \
-  -d '{"page":{"page_size":5}}' \
-  localhost:50051 \
-  bfstore.catalog.v1.CatalogService/ListProducts
-```
-
-Expected behaviour:
+Search for:
 
 ```text
-request succeeds or fails normally
-correlation interceptor generates a correlation ID
-logs include the generated correlation_id
+catalog-service
 ```
 
-## Graceful shutdown behaviour
-
-The service handles:
+Expected result:
 
 ```text
-SIGINT
-SIGTERM
+a catalog gRPC request span
+one or more database/sql child spans
 ```
-
-During shutdown it should:
-
-```text
-mark service NOT_SERVING
-stop accepting new gRPC traffic
-allow in-flight requests to finish
-force stop if graceful shutdown times out
-close the database connection
-log shutdown progress
-```
-
-This behaviour is important for Docker and Kubernetes because containers are normally terminated using `SIGTERM`.
-
-## Configuration
-
-Configuration is loaded by:
-
-```text
-services/catalog-service/internal/config
-```
-
-Common local settings include:
-
-```text
-GRPC_PORT
-GRPC_REFLECTION_ENABLED
-DATABASE_HOST
-DATABASE_PORT
-DATABASE_USER
-DATABASE_PASSWORD
-DATABASE_NAME
-```
-
-Check `.env.example` and `internal/config/config.go` for the exact supported environment variables.
 
 ## Troubleshooting
 
-### `grpcurl` cannot list services
+### Jaeger shows gRPC spans but no DB spans
 
-Check that the service is running and reflection is enabled:
+Check that repository methods use context-aware SQL calls:
 
-```bash
-GRPC_REFLECTION_ENABLED=true go run ./cmd/catalog-service
+```go
+QueryContext
+QueryRowContext
+ExecContext
 ```
 
-Then retry:
+Also confirm telemetry was enabled before the request was sent.
 
-```bash
-grpcurl -plaintext localhost:50051 list
-```
+### DB spans appear as separate traces
 
-### Health check returns `SERVICE_UNKNOWN`
+This usually means request context is not flowing into the repository.
 
-Make sure the service name is exactly:
+Check the call chain:
 
 ```text
-bfstore.catalog.v1.CatalogService
+handler ctx
+-> service ctx
+-> repository ctx
+-> QueryContext(ctx, ...)
 ```
 
-Service names are case-sensitive.
+### SQL driver registration fails
 
-### Makefile gives `missing separator`
-
-Makefile recipe lines must start with a tab.
-
-Correct:
-
-```makefile
-catalog-grpc-list:
-	grpcurl -plaintext localhost:50051 list
-```
-
-Incorrect:
-
-```makefile
-catalog-grpc-list:
-    grpcurl -plaintext localhost:50051 list
-```
-
-### Makefile gives `target pattern contains no '%'`
-
-Check for an extra colon in `.PHONY` declarations.
-
-Incorrect:
-
-```makefile
-.PHONY: catalog-list-categories:
-```
-
-Correct:
-
-```makefile
-.PHONY: catalog-list-categories
-```
-
-Also check that commands are not accidentally written on the same line as targets.
-
-Incorrect:
-
-```makefile
-catalog-health: grpcurl -plaintext -d '{}' localhost:50051 grpc.health.v1.Health/Check
-```
-
-Correct:
-
-```makefile
-catalog-health:
-	grpcurl -plaintext -d '{}' localhost:50051 grpc.health.v1.Health/Check
-```
-
-### `command-line-arguments [command-line-arguments.test]`
-
-This usually means a test file was run directly instead of testing the package.
-
-Avoid:
-
-```bash
-go test catalog_handler_test.go
-```
-
-Use:
-
-```bash
-go test ./internal/grpcadapter
-```
-
-or from the package directory:
-
-```bash
-go test .
-```
-
-### Stale generated Protobuf code
-
-If generated Protobuf accessors appear missing, confirm the workspace is using the local root module.
-
-From the repository root:
-
-```bash
-go env GOWORK
-go list -f '{{.Dir}}' github.com/mantrobuslawal/bfstore/gen/go/bfstore/catalog/v1
-```
-
-The package should resolve to the local repository, not an old module cache version.
-
-## Design notes
-
-The catalog service follows these rules:
-
-```text
-service-specific dependency checks stay inside the service
-shared runtime plumbing lives in pkg/platform
-gRPC transport adaptation stays in grpcadapter
-domain logic stays in catalog
-database access stays in repository code
-startup and shutdown wiring stays in cmd/catalog-service/main.go
-```
-
-This keeps package boundaries clear and avoids turning shared platform packages into a service framework.
+If you see a duplicate registration error, ensure the instrumented driver is registered with `sync.Once`.
 
 ## Current runtime foundation
 
@@ -665,6 +288,11 @@ correlation ID propagation
 panic recovery
 graceful shutdown
 database readiness checks
+OpenTelemetry bootstrap
+gRPC server tracing instrumentation
+database/sql instrumentation through otelsql
+OpenTelemetry Collector integration
+Jaeger trace visualisation
 Makefile-driven local smoke tests
 ```
 
@@ -673,4 +301,7 @@ Makefile-driven local smoke tests
 ```text
 Platform packages provide reusable plumbing.
 Service packages own service-specific truth.
+Instrumentation belongs at stable boundaries first.
 ```
+
+Keep it boring where production matters.
