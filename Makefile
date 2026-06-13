@@ -143,3 +143,21 @@ catalog-run-telemetry:
 	   GRPC_REFLECTION_ENABLED=true \
 	   go run ./cmd/catalog-service
 
+.PHONY: metrics-up
+metrics-up:
+	docker compose -f $(COMPOSE_FILE) up -d otel-collector prometheus
+
+.PHONY: metrics-logs
+metrics-logs:
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector prometheus
+
+.PHONY: observability-up
+observability-up:
+	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger prometheus
+
+.PHONY: observability-logs
+observability-logs:
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus
+
+
+
