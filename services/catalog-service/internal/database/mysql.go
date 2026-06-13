@@ -5,16 +5,21 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/config"
 )
 
+const instrumentedMySQLDriverName = "bfstore-mysql-otel"
+
 // Open creates a MySQL database handle.
 //
 // The returned *sql.DB is a connection pool, not a single connection.
 func Open(cfg config.DatabaseConfig) (*sql.DB, error) {
-	db, err := sql.Open("mysql", cfg.DSN())
+	driverName, err := otelsql.Register(instrumentedMySQLDriverName)
+
+	db, err := sql.Open(driverName, cfg.DSN())
 	if err != nil {
 		return nil, err
 	}
