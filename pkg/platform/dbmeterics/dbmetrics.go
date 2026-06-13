@@ -1,6 +1,7 @@
 package dbmetrics
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 
