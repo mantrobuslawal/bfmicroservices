@@ -1,4 +1,4 @@
-package dbmeterics
+package dbmetrics
 
 import (
 	"database/sql"
@@ -35,7 +35,7 @@ func Register(db *sql.DB, cfg Config) error {
 	}
 
 	attrs := []attribute.KeyValue{
-		attribute.String("db,system", dbSystem),
+		attribute.String("db.system", dbSystem),
 	}
 
 	if cfg.DBName != "" {
@@ -55,7 +55,7 @@ func Register(db *sql.DB, cfg Config) error {
 
 	openConnections, err := meter.Int64ObservableGauge(
 		"db.client.connections.open",
-		metric.WithDescription("Number of established database connections, both in use and idle"),
+		metric.WithDescription("Number of established database connections, both in use and idle."),
 		metric.WithUnit("{connection}"),
 	)
 	if err != nil {
@@ -89,4 +89,69 @@ func Register(db *sql.DB, cfg Config) error {
 		return err
 	}
 
+	waitDuration, err := meter.Int64ObservableGauge(
+		"db.client.connections.wait_duration",
+		metric.WithDescription("Total time callers spent waiting for a database connection."),
+		metric.WithUnit("ms"),
+	)
+	if err != nil {
+		return err
+	}
+
+	maxIdleClosed, err := meter.Int64ObservableGauge(
+		"db.client.connections.max_idle_closed",
+		metric.WithDescription("Total number of database connections closed due to the max idle connections limit."),
+		metric.WithUnit("{connection}"),
+	)
+	if err != nil {
+		return err
+	}
+
+	maxIdleTimeClosed, err := meter.Int64ObservableGauge(
+		"db.client.connections.max_idle_time_closed",
+		metric.WithDescription("Total number of database connections closed due to the max idle time limit."),
+		metric.WithUnit("{connection}"),
+	)
+	if err != nil {
+		return err
+	}
+
+	maxLifetimeClosed, err := meter.Int64ObservableGauge(
+		"db.client.connections.max_lifetime_closed",
+		metric.WithDescription("Total number of database connections closed due to the max lifetime limit."),
+		metric.WithUnit("{connection}"),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = meter.RegisterCallback(
+		func(ctx context.Context, observer metric.Observer) error {
+			stats := db.Stats()
+			options := metric.WithAttributes(attrs...)
+
+			observer.ObserveInt64(maxOpenConnections, int64(stats.MaxOpenConnections), options)
+			observer.ObserveInt64(openConnections, int64(stats.OpenConnections), options)
+			observer.ObserveInt64(inUseConnections, int64(stats.InUse), options)
+			observer.ObserveInt64(idleConnections, int64(stats.Idle), options)
+			observer.ObserveInt64(waitCount, stats.WaitCount, options)
+			observer.ObserveInt64(waitDuration, stats.WaitDuration.Milliseconds(), options)
+			observer.ObserveInt64(maxIdleClosed, stats.MaxIdleClosed, options)
+			observer.ObserveInt64(maxIdleTimeClosed, stats.MaxIdleTimeClosed, options)
+			observer.ObserveInt64(maxLifetimeClosed, stats.MaxLifetimeClosed, options)
+
+			return nil
+		},
+		maxOpenConnections,
+		openConnections,
+		inUseConnections,
+		idleConnections,
+		waitCount,
+		waitDuration,
+		maxIdleClosed,
+		maxIdleTimeClosed,
+		maxLifetimeClosed,
+	)
+
+	return err
 }
