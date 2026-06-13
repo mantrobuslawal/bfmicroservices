@@ -20,34 +20,6 @@ It should stay small and boring. Service code should use this package to initial
 pkg/platform/telemetry
 ```
 
-Package structure:
-
-```text
-pkg/platform/telemetry/
-├── README.md
-├── config.go
-├── telemetry.go
-└── telemetry_test.go
-```
-
-## What problem this solves
-
-Without a shared telemetry bootstrap, every service would need to know how to configure OpenTelemetry providers and exporters.
-
-That would create duplicated setup code across services such as:
-
-```text
-catalog-service
-basket-service
-inventory-service
-order-service
-payment-service
-shipping-service
-notification-service
-```
-
-This package gives each service one consistent setup path.
-
 ## Mental model
 
 Telemetry is runtime evidence about what the service is doing.
@@ -69,172 +41,89 @@ This package focuses on OpenTelemetry traces and metrics.
 
 Logs remain handled by `log/slog` for now.
 
-## Key concepts
+## Instrumentation boundaries
 
-### Resource
+This package initialises telemetry providers and exporters.
 
-A resource describes the entity producing telemetry.
+It does not instrument every technology directly.
 
-For a service, that means attributes such as:
-
-```text
-service.name=catalog-service
-service.version=<git-sha-or-build-version>
-deployment.environment.name=local
-```
-
-### Tracer provider
-
-A tracer provider creates tracers.
-
-Tracers create spans.
-
-A span represents a unit of work, such as:
+Current instrumentation points:
 
 ```text
-handling a gRPC request
-running a database query
-publishing a Kafka event
-calling another service
+gRPC server instrumentation
+  configured in the service gRPC server setup with otelgrpc
+
+database/sql instrumentation
+  configured in the service database package with otelsql
 ```
 
-### Meter provider
+This separation keeps the platform telemetry package focused.
 
-A meter provider creates meters.
+## gRPC instrumentation
 
-Meters create metrics instruments.
-
-Metrics answer questions such as:
-
-```text
-How many requests are happening?
-How long are requests taking?
-How many errors are occurring?
-How many database connections are open?
-```
-
-### Exporter
-
-An exporter sends telemetry data out of the process.
-
-This package uses OTLP over gRPC.
-
-A typical local flow is:
-
-```text
-catalog-service
-  -> OTLP gRPC exporter
-  -> OpenTelemetry Collector
-  -> Jaeger
-```
-
-### Propagator
-
-A propagator carries trace context across process boundaries.
-
-This package configures:
-
-```text
-TraceContext
-Baggage
-```
-
-## Usage
-
-```go
-telemetryConfig := telemetry.DefaultConfig("catalog-service")
-telemetryConfig.Environment = cfg.Environment
-telemetryConfig.ServiceVersion = cfg.ServiceVersion
-telemetryConfig.OTLPEndpoint = cfg.OTLPEndpoint
-telemetryConfig.OTLPInsecure = cfg.OTLPInsecure
-telemetryConfig.TracesEnabled = cfg.TracesEnabled
-telemetryConfig.MetricsEnabled = cfg.MetricsEnabled
-telemetryConfig.MetricExportInterval = cfg.MetricExportInterval
-
-telemetryRuntime, err := telemetry.Setup(ctx, telemetryConfig)
-if err != nil {
-    logger.Error("failed to setup telemetry", "error", err)
-    os.Exit(1)
-}
-
-defer func() {
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-
-    if err := telemetryRuntime.Shutdown(shutdownCtx); err != nil {
-        logger.Error("failed to shutdown telemetry", "error", err)
-    }
-}()
-```
-
-## Config
-
-```go
-type Config struct {
-    ServiceName          string
-    ServiceVersion       string
-    Environment          string
-    OTLPEndpoint         string
-    OTLPInsecure         bool
-    TracesEnabled        bool
-    MetricsEnabled       bool
-    MetricExportInterval time.Duration
-}
-```
-
-Use `DefaultConfig` for local defaults:
-
-```go
-cfg := telemetry.DefaultConfig("catalog-service")
-```
-
-Defaults:
-
-```text
-Environment:          local
-OTLPEndpoint:         localhost:4317
-OTLPInsecure:         true
-TracesEnabled:        true
-MetricsEnabled:       true
-MetricExportInterval: 30 seconds
-```
-
-## Local development
-
-The default endpoint assumes an OpenTelemetry Collector listening on:
-
-```text
-localhost:4317
-```
-
-For Docker Compose, this will usually become:
-
-```text
-otel-collector:4317
-```
-
-depending on whether the service runs on the host or inside the Compose network.
-
-## Current scope
-
-This package initialises providers and exporters.
-
-The catalog service also uses gRPC server instrumentation with:
+The catalog service uses:
 
 ```go
 grpc.StatsHandler(otelgrpc.NewServerHandler())
 ```
 
-That instrumentation belongs in the service gRPC server setup, not in the telemetry bootstrap package.
+This creates gRPC server spans for incoming catalog requests.
 
-The package does not yet:
+## Database instrumentation
 
-- add database instrumentation;
-- add Kafka instrumentation;
-- define custom business metrics;
-- emit OpenTelemetry logs.
+The catalog service instruments MySQL through `database/sql` using:
 
-Those should be added in later slices.
+```text
+github.com/XSAM/otelsql
+```
+
+That instrumentation is configured in:
+
+```text
+services/catalog-service/internal/database/mysql.go
+```
+
+The database flow is:
+
+```text
+catalog repository
+  -> *sql.DB
+  -> otelsql instrumented driver
+  -> go-sql-driver/mysql
+  -> MySQL
+```
+
+This produces database spans underneath request traces when repository code uses context-aware SQL calls:
+
+```go
+QueryContext(ctx, ...)
+QueryRowContext(ctx, ...)
+ExecContext(ctx, ...)
+```
+
+The platform telemetry package should not need to know the details of each service database driver.
+
+## Local development
+
+When running the service from the host, export telemetry to:
+
+```text
+localhost:4317
+```
+
+When running inside Docker Compose, export telemetry to:
+
+```text
+otel-collector:4317
+```
+
+The local observability flow is:
+
+```text
+catalog-service
+  -> OpenTelemetry Collector
+  -> Jaeger
+```
 
 ## Testing
 
@@ -244,13 +133,45 @@ Run package tests:
 go test ./pkg/platform/telemetry -v
 ```
 
-The tests focus on configuration behaviour and disabled-signal setup. They deliberately avoid requiring a live OpenTelemetry Collector.
+Database instrumentation tests live closer to the database package:
+
+```bash
+go test ./services/catalog-service/internal/database -v
+```
+
+Those unit tests should verify driver registration behaviour without requiring a live MySQL instance.
+
+## Current scope
+
+This package currently supports:
+
+```text
+resource creation
+trace provider setup
+metric provider setup
+OTLP exporter setup
+global propagator setup
+graceful shutdown
+```
+
+It does not yet:
+
+```text
+define custom business metrics
+instrument Kafka
+instrument outbound gRPC clients
+emit OpenTelemetry logs
+provide production Collector configuration
+```
+
+Those should be added in later slices.
 
 ## Design rule
 
 ```text
-This package initialises telemetry plumbing.
-Service code decides what work is worth instrumenting.
+The telemetry package initialises telemetry plumbing.
+Service packages instrument their own stable technology boundaries.
+Repository code remains context-led and boring.
 ```
 
 Keep it boring where production matters.
