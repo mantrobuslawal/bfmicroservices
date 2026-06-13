@@ -11,6 +11,7 @@ The service is implemented in Go and uses:
 - MySQL for catalog persistence;
 - `database/sql` for database access;
 - `otelsql` for database instrumentation;
+- `pkg/platform/dbmetrics` for database connection pool metrics;
 - shared platform gRPC interceptors;
 - standard gRPC health checks;
 - structured logging with `log/slog`;
@@ -27,6 +28,7 @@ load configuration
 -> create logger
 -> initialise telemetry when enabled
 -> open instrumented MySQL connection pool
+-> register database pool metrics
 -> run catalog readiness check
 -> create catalog repository
 -> create catalog service
@@ -51,25 +53,38 @@ receive SIGINT or SIGTERM
 -> flush and shutdown telemetry providers
 ```
 
-## Request path
+## Observability
 
-A typical catalog request flows through the service like this:
+The catalog service currently emits:
 
 ```text
-grpc client
-  -> catalog gRPC server
-  -> otelgrpc server instrumentation
-  -> recovery interceptor
-  -> correlation ID interceptor
-  -> logging interceptor
-  -> catalog gRPC handler
-  -> catalog application service
-  -> catalog repository
-  -> instrumented database/sql driver
-  -> MySQL
+gRPC request spans
+database/sql spans
+database connection pool metrics
+structured request logs
+correlation IDs
 ```
 
-When telemetry is enabled, Jaeger should show a trace shaped roughly like:
+Current telemetry flow:
+
+```text
+catalog-service
+  -> OpenTelemetry Collector
+  -> Jaeger for traces
+  -> Collector debug logs for metrics
+```
+
+## Database spans
+
+Database spans are created through `otelsql`.
+
+The instrumentation is configured in:
+
+```text
+services/catalog-service/internal/database/mysql.go
+```
+
+Expected trace shape in Jaeger:
 
 ```text
 /bfstore.catalog.v1.CatalogService/ListProducts
@@ -77,133 +92,53 @@ When telemetry is enabled, Jaeger should show a trace shaped roughly like:
   -> database/sql span
 ```
 
-The exact database span names may vary depending on the SQL operation and the instrumentation library behaviour.
-
-## Database instrumentation
-
-The catalog service instruments MySQL at the database connection boundary:
-
-```text
-services/catalog-service/internal/database/mysql.go
-```
-
-This is deliberate.
-
-Instrumentation belongs at the connection boundary first, not scattered through every repository method.
-
-The service uses:
-
-```text
-github.com/XSAM/otelsql
-```
-
-to wrap Go's standard `database/sql` MySQL driver.
-
-The resulting flow is:
-
-```text
-catalog repository
-  -> *sql.DB
-  -> otelsql instrumented driver wrapper
-  -> go-sql-driver/mysql
-  -> MySQL
-```
-
-## Driver registration
-
-The instrumented SQL driver should be registered once per process.
-
-The recommended pattern is:
+Repository methods must use context-aware SQL calls:
 
 ```go
-var (
-    registerInstrumentedDriverOnce sync.Once
-    registerInstrumentedDriverName string
-    registerInstrumentedDriverErr  error
-)
+QueryContext(ctx, ...)
+QueryRowContext(ctx, ...)
+ExecContext(ctx, ...)
 ```
 
-Then:
+## Database metrics
 
-```go
-func instrumentedMySQLDriver() (string, error) {
-    registerInstrumentedDriverOnce.Do(func() {
-        registerInstrumentedDriverName, registerInstrumentedDriverErr = otelsql.Register(baseMySQLDriverName)
-    })
-
-    if registerInstrumentedDriverErr != nil {
-        return "", registerInstrumentedDriverErr
-    }
-
-    return registerInstrumentedDriverName, nil
-}
-```
-
-This avoids duplicate SQL driver registration if `Open` is called more than once in a process.
-
-## Context propagation requirement
-
-Database spans attach correctly to request traces when repository methods use context-aware database calls:
-
-```go
-db.QueryContext(ctx, query, args...)
-db.QueryRowContext(ctx, query, args...)
-db.ExecContext(ctx, query, args...)
-```
-
-Avoid non-context calls in request paths:
-
-```go
-db.Query(query, args...)
-db.QueryRow(query, args...)
-db.Exec(query, args...)
-```
-
-The `ctx` from the gRPC request should flow through:
+Database connection pool metrics are registered through:
 
 ```text
-gRPC handler
-  -> catalog service method
-  -> repository method
-  -> QueryContext / QueryRowContext / ExecContext
+pkg/platform/dbmetrics
 ```
 
-That is what makes the DB spans appear underneath the gRPC request span in Jaeger.
+The catalog service wires these metrics after opening the database connection pool.
 
-## Telemetry
+Current metric names:
 
-Telemetry can be enabled locally with:
+```text
+db.client.connections.max
+db.client.connections.open
+db.client.connections.in_use
+db.client.connections.idle
+db.client.connections.wait_count
+db.client.connections.wait_duration
+db.client.connections.max_idle_closed
+db.client.connections.max_idle_time_closed
+db.client.connections.max_lifetime_closed
+```
+
+These metrics are sourced from:
+
+```go
+db.Stats()
+```
+
+## Running with telemetry
+
+Start observability services:
 
 ```bash
-TELEMETRY_ENABLED=true
-OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
-OTEL_EXPORTER_OTLP_INSECURE=true
+make observability-up
 ```
 
-When running the service from the host with `go run`, use:
-
-```text
-localhost:4317
-```
-
-When running the service from inside Docker Compose, use:
-
-```text
-otel-collector:4317
-```
-
-Useful local telemetry flow:
-
-```text
-catalog-service
-  -> OTLP gRPC localhost:4317
-  -> otel-collector
-  -> jaeger
-```
-
-## Smoke testing database spans
-
-Run the catalog service with telemetry enabled:
+Run catalog-service with telemetry enabled:
 
 ```bash
 cd services/catalog-service
@@ -215,15 +150,17 @@ GRPC_REFLECTION_ENABLED=true \
 go run ./cmd/catalog-service
 ```
 
-Send a request with an explicit correlation ID:
+Send a request:
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-db-otel-123' \
+  -H 'x-correlation-id: local-dev-dbmetrics-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
 ```
+
+## Viewing traces
 
 Open Jaeger:
 
@@ -237,18 +174,55 @@ Search for:
 catalog-service
 ```
 
-Expected result:
+## Viewing metrics
+
+Watch Collector logs:
+
+```bash
+docker compose logs -f otel-collector
+```
+
+Look for:
 
 ```text
-a catalog gRPC request span
-one or more database/sql child spans
+db.client.connections.open
+db.client.connections.in_use
+db.client.connections.idle
+db.client.connections.wait_count
+db.client.connections.wait_duration
+```
+
+## Running tests
+
+Run catalog tests:
+
+```bash
+make catalog-test
+```
+
+Run database package tests:
+
+```bash
+go test ./services/catalog-service/internal/database -v
+```
+
+Run DB metrics package tests:
+
+```bash
+go test ./pkg/platform/dbmetrics -v
+```
+
+Run all tests:
+
+```bash
+go test ./...
 ```
 
 ## Troubleshooting
 
-### Jaeger shows gRPC spans but no DB spans
+### Jaeger shows gRPC spans but no database spans
 
-Check that repository methods use context-aware SQL calls:
+Check that repository methods use:
 
 ```go
 QueryContext
@@ -256,24 +230,24 @@ QueryRowContext
 ExecContext
 ```
 
-Also confirm telemetry was enabled before the request was sent.
+Also confirm the service was restarted after database instrumentation was added.
 
-### DB spans appear as separate traces
+### Collector logs show no DB metrics
 
-This usually means request context is not flowing into the repository.
-
-Check the call chain:
+Check that:
 
 ```text
-handler ctx
--> service ctx
--> repository ctx
--> QueryContext(ctx, ...)
+TELEMETRY_ENABLED=true
+MetricsEnabled is true
+dbmetrics.Register is called after database.Open
+Collector metrics pipeline includes debug exporter
 ```
 
-### SQL driver registration fails
+### Metrics do not change much locally
 
-If you see a duplicate registration error, ensure the instrumented driver is registered with `sync.Once`.
+That may be normal with low local traffic.
+
+Send repeated requests or add a small load test later to create more visible activity.
 
 ## Current runtime foundation
 
@@ -290,18 +264,19 @@ graceful shutdown
 database readiness checks
 OpenTelemetry bootstrap
 gRPC server tracing instrumentation
-database/sql instrumentation through otelsql
+database/sql tracing through otelsql
+database pool metrics through dbmetrics
 OpenTelemetry Collector integration
 Jaeger trace visualisation
+Collector debug metric verification
 Makefile-driven local smoke tests
 ```
 
 ## Practical rule
 
 ```text
-Platform packages provide reusable plumbing.
-Service packages own service-specific truth.
-Instrumentation belongs at stable boundaries first.
+Traces explain request paths.
+Metrics explain resource health over time.
 ```
 
 Keep it boring where production matters.
