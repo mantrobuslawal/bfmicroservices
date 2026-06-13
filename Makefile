@@ -153,11 +153,11 @@ metrics-logs:
 
 .PHONY: observability-up
 observability-up:
-	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger prometheus
+	docker compose -f $(COMPOSE_FILE) up -d otel-collector jaeger prometheus grafana
 
 .PHONY: observability-logs
 observability-logs:
-	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus
+	docker compose -f $(COMPOSE_FILE) logs -f otel-collector jaeger prometheus grafana
 
 
 

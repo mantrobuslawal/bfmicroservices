@@ -149,6 +149,22 @@ services:
     depends_on:
       - otel-collector
     
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bfstore-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - bfstore-grafana-data:/var/lib/grafana
+      - ./deploy/local/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - bfstore-local
 
 networks:
   bfstore:
@@ -159,3 +175,4 @@ volumes:
   bfstore_mysql_data:
   bfstore_kafka_data:
   bfstore-prometheus-data:
+  bfstore-grafana-data:
