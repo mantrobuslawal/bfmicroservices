@@ -1,190 +1,177 @@
-# Catalogue Service
+# Platform Telemetry
 
-## 1. Purpose
+The `telemetry` package provides shared OpenTelemetry bootstrap code for bfstore services.
 
-The **Catalogue Service** owns product catalogue truth for bfstore.
+It is responsible for initialising service-level telemetry plumbing:
 
-It is responsible for:
+- service identity;
+- resource attributes;
+- trace provider setup;
+- metric provider setup;
+- OTLP exporter configuration;
+- global trace context propagation;
+- graceful telemetry shutdown.
 
-```text
-products
-categories
-product variants
-category-scoped product attributes
-product images
-catalogue lifecycle state
-```
+It should stay small and boring. Service code should use this package to initialise telemetry during startup, then add instrumentation deliberately where it is useful.
 
-It is not responsible for:
-
-```text
-stock levels
-basket state
-orders
-payments
-shipping
-search ranking
-recommendations
-```
-
----
-
-## 2. Service Role
-
-Catalogue Service provides customer-facing product and category data over gRPC.
-
-Initial API focus:
+## Package location
 
 ```text
-ListProducts
-GetProduct
-ListCategories
+pkg/platform/telemetry
 ```
 
-Later API expansion:
+## Mental model
+
+Telemetry is runtime evidence about what the service is doing.
+
+For bfstore, think of the signals like this:
 
 ```text
-ListProductAttributeDefinitions
-admin product management
-catalogue event publishing
-search projection updates
+logs
+  What happened?
+
+traces
+  Where did this request go?
+
+metrics
+  How much, how often, how slow, how many?
 ```
 
----
+This package focuses on OpenTelemetry traces and metrics.
 
-## 3. Architecture
+Logs remain handled by `log/slog` for now.
 
-The service follows a small layered structure:
+## Instrumentation boundaries
+
+This package initialises telemetry providers and exporters.
+
+It does not instrument every technology directly.
+
+Current instrumentation points:
 
 ```text
-cmd/catalog-service/
-└── main.go
+gRPC server instrumentation
+  configured in the service gRPC server setup with otelgrpc
 
-internal/
-├── config/
-│   └── config.go
-├── database/
-│   └── mysql.go
-├── health/
-│   └── health.go
-├── catalog/
-│   ├── repository.go
-│   └── service.go
-└── grpc/
-    ├── server.go
-    └── catalog_handler.go
+database/sql instrumentation
+  configured in the service database package with otelsql
 ```
 
-Layer responsibilities:
+This separation keeps the platform telemetry package focused.
+
+## gRPC instrumentation
+
+The catalog service uses:
+
+```go
+grpc.StatsHandler(otelgrpc.NewServerHandler())
+```
+
+This creates gRPC server spans for incoming catalog requests.
+
+## Database instrumentation
+
+The catalog service instruments MySQL through `database/sql` using:
 
 ```text
-cmd              application entry point
-config           environment configuration
-database         MySQL connection setup
-catalog          domain service and repository logic
-grpc             transport handlers
-health           service readiness/liveness checks
+github.com/XSAM/otelsql
 ```
 
----
-
-## 4. Data Ownership
-
-Catalogue Service owns the `bfstore_catalog` database.
-
-It must not directly access databases owned by other services.
-
-Other services should use Catalogue Service APIs or consume Catalogue events where appropriate.
-
----
-
-## 5. Contracts
-
-Catalogue Service contracts live under:
+That instrumentation is configured in:
 
 ```text
-proto/acme/catalog/v1/
+services/catalog-service/internal/database/mysql.go
 ```
 
-Expected generated Go package:
+The database flow is:
 
 ```text
-gen/go/acme/catalog/v1
+catalog repository
+  -> *sql.DB
+  -> otelsql instrumented driver
+  -> go-sql-driver/mysql
+  -> MySQL
 ```
 
-This skeleton assumes generated Protobuf code will be added by running:
+This produces database spans underneath request traces when repository code uses context-aware SQL calls:
 
-```sh
-buf generate
+```go
+QueryContext(ctx, ...)
+QueryRowContext(ctx, ...)
+ExecContext(ctx, ...)
 ```
 
----
+The platform telemetry package should not need to know the details of each service database driver.
 
-## 6. Local Development
+## Local development
 
-From the repository root:
-
-```sh
-make up
-make proto-generate
-```
-
-Then, from this service directory or root-level service commands later:
-
-```sh
-go test ./...
-```
-
-The service expects MySQL configuration through environment variables.
-
-Example:
+When running the service from the host, export telemetry to:
 
 ```text
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_DATABASE=bfstore_catalog
-MYSQL_USER=bfstore_catalog_user
-MYSQL_PASSWORD=bfstore_catalog_password
-CATALOG_SERVICE_GRPC_PORT=50051
+localhost:4317
 ```
 
----
-
-## 7. Implementation Status
-
-Current status:
+When running inside Docker Compose, export telemetry to:
 
 ```text
-service skeleton
-configuration loader
-MySQL connection helper
-repository interfaces
-service layer placeholders
-gRPC server wiring
-health checks
-Dockerfile
+otel-collector:4317
 ```
 
-Next implementation target:
+The local observability flow is:
 
 ```text
-ListProducts
-GetProduct
-ListCategories
+catalog-service
+  -> OpenTelemetry Collector
+  -> Jaeger
 ```
 
----
+## Testing
 
-## 8. Client-Facing Engineering Evidence
+Run package tests:
 
-This service demonstrates:
+```bash
+go test ./pkg/platform/telemetry -v
+```
+
+Database instrumentation tests live closer to the database package:
+
+```bash
+go test ./services/catalog-service/internal/database -v
+```
+
+Those unit tests should verify driver registration behaviour without requiring a live MySQL instance.
+
+## Current scope
+
+This package currently supports:
 
 ```text
-contract-first service design
-clean service boundaries
-service-owned database access
-layered Go service structure
-container-ready implementation
-clear local development path
-future-ready observability and health hooks
+resource creation
+trace provider setup
+metric provider setup
+OTLP exporter setup
+global propagator setup
+graceful shutdown
 ```
+
+It does not yet:
+
+```text
+define custom business metrics
+instrument Kafka
+instrument outbound gRPC clients
+emit OpenTelemetry logs
+provide production Collector configuration
+```
+
+Those should be added in later slices.
+
+## Design rule
+
+```text
+The telemetry package initialises telemetry plumbing.
+Service packages instrument their own stable technology boundaries.
+Repository code remains context-led and boring.
+```
+
+Keep it boring where production matters.
