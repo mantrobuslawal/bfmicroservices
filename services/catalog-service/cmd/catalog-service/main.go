@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mantrobuslawal/bfstore/pkg/platform/dbmetrics"
 	"github.com/mantrobuslawal/bfstore/pkg/platform/healthcheck"
 	"github.com/mantrobuslawal/bfstore/pkg/platform/telemetry"
 	"github.com/mantrobuslawal/bfstore/services/catalog-service/internal/catalog"
@@ -43,6 +44,15 @@ func main() {
 	defer closeDatabase(logger, db)
 
 	logger.Info("database connection opened")
+
+	if err := dbmetrics.Register(db, dbmetrics.Config{
+		MeterName: "github.com/mantrobuslawal/bfstore/services/catalog-service",
+		DBSystem:  "mysql",
+		DBName:    cfg.Database.Name,
+	}); err != nil {
+		logger.Error("failed to register database metrics", "error", err)
+		os.Exit(1)
+	}
 
 	var telemetryRuntime *telemetry.Runtime
 
