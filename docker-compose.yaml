@@ -119,7 +119,7 @@ services:
       - "4318:4318"
       - "9464:9464"
     networks:
-      -bfstore
+      - bfstore
     restart: unless-stopped
     depends_on:
       - jaeger
@@ -140,7 +140,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yaml"
     volumes:
-      - ./deploy/local/prometheus/promethus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./deploy/local/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - bfstore-prometheus-data:/prometheus
     ports:
       - "9090:9090"
@@ -158,3 +158,4 @@ networks:
 volumes:
   bfstore_mysql_data:
   bfstore_kafka_data:
+  bfstore-prometheus-data:

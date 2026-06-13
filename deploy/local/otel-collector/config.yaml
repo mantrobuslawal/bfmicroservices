@@ -18,7 +18,7 @@ exporters:
     tls:
       insecure: true
 
-  promethus:
+  prometheus:
     endpoint: 0.0.0.0:9464
 
 service:
@@ -31,5 +31,5 @@ service:
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug, promethus]
+      exporters: [debug, prometheus]
 
