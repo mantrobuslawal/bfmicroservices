@@ -2,50 +2,19 @@
 
 The `catalog-service` owns product catalog data for bfstore.
 
-It provides gRPC APIs for reading catalog information such as products, categories, product variants, product images, and product attribute definitions.
-
-The service is implemented in Go and uses:
-
-- gRPC for service APIs;
-- Protobuf-generated contracts from the root `proto` directory;
-- MySQL for catalog persistence;
-- `database/sql` for database access;
-- `otelsql` for database instrumentation;
-- `pkg/platform/dbmetrics` for database connection pool metrics;
-- shared platform gRPC interceptors;
-- standard gRPC health checks;
-- structured logging with `log/slog`;
-- OpenTelemetry tracing and metrics bootstrap;
-- OpenTelemetry Collector for telemetry routing;
-- Jaeger for trace visualisation;
-- Prometheus for metrics querying;
-- graceful shutdown for local and container runtime behaviour.
-
-## Runtime architecture
-
-At runtime, the catalog service starts like this:
-
-```text
-load configuration
--> create logger
--> initialise telemetry when enabled
--> open instrumented MySQL connection pool
--> register database pool metrics
--> run catalog readiness check
--> create catalog repository
--> create catalog service
--> create gRPC server
--> register platform interceptors
--> register OpenTelemetry gRPC instrumentation
--> register catalog gRPC handler
--> register gRPC health service
--> optionally register gRPC reflection
--> start serving requests
-```
-
 ## Observability
 
-The catalog service currently emits:
+Current local telemetry flow:
+
+```text
+catalog-service
+  -> OpenTelemetry Collector
+  -> Jaeger for traces
+  -> Prometheus for metrics
+  -> Grafana for dashboards
+```
+
+The service currently emits:
 
 ```text
 gRPC request spans
@@ -55,82 +24,37 @@ structured request logs
 correlation IDs
 ```
 
-Current telemetry flow:
+## Grafana dashboard
+
+Dashboard:
 
 ```text
-catalog-service
-  -> OpenTelemetry Collector
-  -> Jaeger for traces
-  -> Prometheus for metrics
+Catalog DB Pool Overview
 ```
 
-## Database spans
-
-Database spans are created through `otelsql`.
-
-Instrumentation location:
+Dashboard file:
 
 ```text
-services/catalog-service/internal/database/mysql.go
+deployments/local/grafana/dashboards/catalog-db-pool-overview.json
 ```
 
-Expected trace shape in Jaeger:
+Dashboard provider:
 
 ```text
-/bfstore.catalog.v1.CatalogService/ListProducts
-  -> database/sql span
-  -> database/sql span
+deployments/local/grafana/provisioning/dashboards/dashboards.yml
 ```
 
-Repository methods must use context-aware SQL calls:
-
-```go
-QueryContext(ctx, ...)
-QueryRowContext(ctx, ...)
-ExecContext(ctx, ...)
-```
-
-## Database metrics
-
-Database connection pool metrics are registered through:
+Prometheus data source:
 
 ```text
-pkg/platform/dbmetrics
-```
-
-Current metric names:
-
-```text
-db.client.connections.max
-db.client.connections.open
-db.client.connections.in_use
-db.client.connections.idle
-db.client.connections.wait_count
-db.client.connections.wait_duration
-db.client.connections.max_idle_closed
-db.client.connections.max_idle_time_closed
-db.client.connections.max_lifetime_closed
-```
-
-In Prometheus, these commonly appear as:
-
-```text
-db_client_connections_open
-db_client_connections_in_use
-db_client_connections_idle
-db_client_connections_wait_count
-db_client_connections_wait_duration
+deployments/local/grafana/provisioning/datasources/prometheus.yml
 ```
 
 ## Running with telemetry
 
-Start observability services:
-
 ```bash
 make observability-up
 ```
-
-Run catalog-service with telemetry enabled:
 
 ```bash
 cd services/catalog-service
@@ -146,121 +70,18 @@ Send a request:
 
 ```bash
 grpcurl -plaintext \
-  -H 'x-correlation-id: local-dev-prometheus-123' \
+  -H 'x-correlation-id: local-dev-grafana-123' \
   -d '{"page":{"page_size":5}}' \
   localhost:50051 \
   bfstore.catalog.v1.CatalogService/ListProducts
 ```
 
-## Viewing traces
-
-Open Jaeger:
+## UIs
 
 ```text
-http://localhost:16686
-```
-
-Search for:
-
-```text
-catalog-service
-```
-
-## Viewing metrics
-
-Open Prometheus:
-
-```text
-http://localhost:9090
-```
-
-Check target health:
-
-```text
-http://localhost:9090/targets
-```
-
-Expected target:
-
-```text
-otel-collector
-```
-
-Expected state:
-
-```text
-UP
-```
-
-Try PromQL queries:
-
-```promql
-db_client_connections_open
-```
-
-```promql
-db_client_connections_in_use
-```
-
-```promql
-db_client_connections_idle
-```
-
-```promql
-rate(db_client_connections_wait_count[5m])
-```
-
-```promql
-rate(db_client_connections_wait_duration[5m])
-```
-
-## Running tests
-
-```bash
-make catalog-test
-go test ./services/catalog-service/internal/database -v
-go test ./pkg/platform/dbmetrics -v
-go test ./...
-```
-
-## Troubleshooting
-
-### Jaeger shows gRPC spans but no database spans
-
-Check that repository methods use:
-
-```go
-QueryContext
-QueryRowContext
-ExecContext
-```
-
-Also confirm the service was restarted after database instrumentation was added.
-
-### Prometheus target is down
-
-Check:
-
-```bash
-docker compose logs -f prometheus
-docker compose logs -f otel-collector
-```
-
-Confirm Prometheus scrapes:
-
-```text
-otel-collector:9464
-```
-
-### Prometheus target is up but no DB metrics appear
-
-Check:
-
-```text
-TELEMETRY_ENABLED=true
-MetricsEnabled is true
-dbmetrics.Register is called after database.Open
-a fresh catalog request has been sent
+Jaeger:     http://localhost:16686
+Prometheus: http://localhost:9090
+Grafana:    http://localhost:3000
 ```
 
 ## Current runtime foundation
@@ -283,7 +104,7 @@ database pool metrics through dbmetrics
 OpenTelemetry Collector integration
 Jaeger trace visualisation
 Prometheus metric querying
-Makefile-driven local smoke tests
+Grafana dashboard provisioning
 ```
 
 ## Practical rule
@@ -291,7 +112,7 @@ Makefile-driven local smoke tests
 ```text
 Traces explain request paths.
 Metrics explain resource health over time.
-Dashboards should come after queries work.
+Dashboards make the signal easy to inspect.
 ```
 
 Keep it boring where production matters.
