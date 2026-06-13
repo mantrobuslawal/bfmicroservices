@@ -12,7 +12,7 @@ for i in $(seq 1 "$REQUESTS"); do
      "$TARGET" \
      bfstore.catalog.v1.CatalogService/ListProducts > /dev/null
 
-    echo "sent request $1/$REQUESTS"
+    echo "sent request $i/$REQUESTS"
 
     sleep "$SLEEP_SECONDS"
 done
