@@ -50,6 +50,6 @@ func TestRegisterAppliesDefaults(t *testing.T) {
 	defer db.Close()
 
 	if err := Register(db, Config{}); err != nil {
-		t.Fatalf("Register() error = %v, want nil")
+		t.Fatalf("Register() error = %v, want nil", err)
 	}
 }
